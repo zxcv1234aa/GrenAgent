@@ -1,0 +1,115 @@
+import { describe, it, expect } from 'vitest';
+import {
+  initialAgentState,
+  applyEvent,
+  addUserMessage,
+  messagesFromAgent,
+  type ChatMessage,
+} from './agentReducer';
+import type { AgentEvent } from '../lib/pi';
+
+function text(msg: ChatMessage): string {
+  return msg.kind === 'assistant' || msg.kind === 'user' ? msg.text : '';
+}
+
+describe('applyEvent', () => {
+  it('starts streaming assistant message on message_start', () => {
+    let s = initialAgentState();
+    s = applyEvent(s, { type: 'agent_start' } as AgentEvent);
+    expect(s.isStreaming).toBe(true);
+    s = applyEvent(s, {
+      type: 'message_start',
+      message: { role: 'assistant', content: [] },
+    } as AgentEvent);
+    expect(s.messages.at(-1)?.kind).toBe('assistant');
+  });
+
+  it('replaces streaming text from message_update snapshots (not append)', () => {
+    let s = initialAgentState();
+    s = applyEvent(s, { type: 'message_start', message: { role: 'assistant', content: [] } } as AgentEvent);
+    s = applyEvent(s, {
+      type: 'message_update',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Hello' }] },
+      assistantMessageEvent: { type: 'text_delta', delta: 'Hello' },
+    } as AgentEvent);
+    s = applyEvent(s, {
+      type: 'message_update',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Hello world' }] },
+      assistantMessageEvent: { type: 'text_delta', delta: ' world' },
+    } as AgentEvent);
+    expect(text(s.messages.at(-1)!)).toBe('Hello world'); // 替换语义：不是 'HelloHello world'
+  });
+
+  it('finalizes on agent_end and clears streaming', () => {
+    let s = initialAgentState();
+    s = applyEvent(s, { type: 'agent_start' } as AgentEvent);
+    s = applyEvent(s, { type: 'agent_end', messages: [] } as AgentEvent);
+    expect(s.isStreaming).toBe(false);
+  });
+
+  it('tracks tool calls by toolCallId', () => {
+    let s = initialAgentState();
+    s = applyEvent(s, {
+      type: 'tool_execution_start', toolCallId: 'c1', toolName: 'bash', args: { command: 'ls' },
+    } as AgentEvent);
+    s = applyEvent(s, {
+      type: 'tool_execution_end', toolCallId: 'c1', toolName: 'bash', result: { content: [] }, isError: false,
+    } as AgentEvent);
+    const tool = s.messages.find((m) => m.kind === 'tool' && m.toolCallId === 'c1');
+    expect(tool && tool.kind === 'tool' ? tool.status : '').toBe('done');
+  });
+
+  it('addUserMessage appends a user message', () => {
+    let s = initialAgentState();
+    s = addUserMessage(s, 'hi there');
+    const last = s.messages.at(-1)!;
+    expect(last.kind).toBe('user');
+    expect(text(last)).toBe('hi there');
+  });
+
+  it('message_end drops assistant messages with only tool calls (no visible text)', () => {
+    let s = initialAgentState();
+    s = applyEvent(s, {
+      type: 'message_start',
+      message: { role: 'assistant', content: [{ type: 'toolCall', id: 'c1', name: 'bash' }] },
+    } as AgentEvent);
+    expect(s.messages).toHaveLength(1);
+    s = applyEvent(s, {
+      type: 'message_end',
+      message: { role: 'assistant', content: [{ type: 'toolCall', id: 'c1', name: 'bash' }] },
+    } as AgentEvent);
+    expect(s.messages).toHaveLength(0);
+  });
+
+  it('reuses streaming assistant on duplicate message_start', () => {
+    let s = initialAgentState();
+    s = applyEvent(s, { type: 'message_start', message: { role: 'assistant', content: [] } } as AgentEvent);
+    s = applyEvent(s, { type: 'message_start', message: { role: 'assistant', content: [] } } as AgentEvent);
+    expect(s.messages).toHaveLength(1);
+  });
+
+  it('messagesFromAgent maps user and assistant history', () => {
+    const msgs = messagesFromAgent([
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+    ]);
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0].kind).toBe('user');
+    expect(text(msgs[0])).toBe('hello');
+    expect(msgs[1].kind).toBe('assistant');
+    expect(text(msgs[1])).toBe('hi');
+  });
+
+  it('message_end finalizes streaming assistant text', () => {
+    let s = initialAgentState();
+    s = applyEvent(s, { type: 'message_start', message: { role: 'assistant', content: [] } } as AgentEvent);
+    s = applyEvent(s, {
+      type: 'message_end',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] },
+    } as AgentEvent);
+    const last = s.messages.at(-1)!;
+    expect(last.kind).toBe('assistant');
+    expect(text(last)).toBe('done');
+    expect(last.kind === 'assistant' && last.streaming).toBe(false);
+  });
+});
