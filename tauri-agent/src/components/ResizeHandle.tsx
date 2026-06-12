@@ -37,6 +37,7 @@ export function ResizeHandle({
       mode="fixed"
       placement={placement}
       expandable={false}
+      stableLayout
       defaultSize={isVertical ? { height: defaultSize } : { width: defaultSize }}
       minWidth={isVertical ? undefined : minSize}
       maxWidth={isVertical ? undefined : maxSize}
