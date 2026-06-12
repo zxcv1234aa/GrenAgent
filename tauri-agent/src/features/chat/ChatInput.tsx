@@ -5,13 +5,7 @@ import { createStyles } from 'antd-style';
 import { useAgentStore } from '../../stores/AgentStoreContext';
 
 const useStyles = createStyles(({ token, css }) => ({
-  container: css`
-    border-top: 1px solid ${token.colorBorderSecondary};
-    padding: 12px;
-  `,
   inputWrap: css`
-    flex: 1;
-    min-width: 0;
     border: 1px solid ${token.colorBorder};
     border-radius: ${token.borderRadiusLG}px;
     padding: 4px 8px;
@@ -38,20 +32,22 @@ export function ChatInput({ onSend, onAbort }: ChatInputProps) {
   };
 
   return (
-    <div style={{
-      position: 'absolute',
-      bottom: 16,
-      left: 16,
-      right: 16,
-      zIndex: 20,
-      background: 'rgba(0, 0, 0, 0.8)',
-      backdropFilter: 'blur(8px)',
-      border: '1px solid rgba(255, 255, 255, 0.1)',
-      borderRadius: 8,
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-      padding: 12,
-    }}>
-      <Flexbox horizontal align="flex-end" gap={8} className={styles.container}>
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 16,
+        left: 16,
+        right: 16,
+        zIndex: 20,
+        background: 'rgba(0, 0, 0, 0.8)',
+        backdropFilter: 'blur(8px)',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        borderRadius: 8,
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+        padding: 12,
+      }}
+    >
+      <Flexbox gap={8} align="stretch">
         <div className={styles.inputWrap}>
           <ChatInputAreaInner
             value={value}
