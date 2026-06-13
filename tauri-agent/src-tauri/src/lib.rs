@@ -83,6 +83,8 @@ pub fn run() {
             commands::review::rv_list,
             commands::create::create_list,
             commands::create::create_image,
+            commands::get_settings,
+            commands::set_settings,
             commands::terminal::execute_command,
             commands::shell::shell_start,
             commands::shell::shell_write,
