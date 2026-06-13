@@ -6,7 +6,8 @@ import {
   messagesFromAgent,
   type AgentState,
 } from './agentReducer';
-import { onPiEvent, onPiExit, type AgentMessage } from '../lib/pi';
+import { onPiEvent, onPiExit, type AgentEvent, type AgentMessage } from '../lib/pi';
+import { getThinkingDuration, saveThinkingDuration } from '../lib/thinkingDurations';
 
 export interface LoadMessagesOptions {
   force?: boolean;
@@ -37,9 +38,63 @@ export function createAgentStore(workspace: string): AgentStoreApi {
     useStore.setState(next, true);
   };
 
+  // —— 事件按动画帧批量应用（对齐 lobehub 流式平滑的思路）——
+  // 高频 thinking/text delta 一帧内合并为一次 setState，降低渲染压力；
+  // 打字机视觉由 Markdown animated 承担，不丢任何事件、保持顺序。
+  let queue: AgentEvent[] = [];
+  let rafId: number | null = null;
+
+  /** 推理结束后把实时计出的时长按消息 timestamp 落盘（供切换会话后回填）。 */
+  const persistThinkingDurations = (state: AgentState) => {
+    for (const m of state.messages) {
+      if (
+        m.kind === 'assistant' &&
+        m.thinking &&
+        m.timestamp != null &&
+        m.thinkingDuration != null
+      ) {
+        saveThinkingDuration(m.timestamp, m.thinkingDuration);
+      }
+    }
+  };
+
+  const flush = () => {
+    rafId = null;
+    if (!queue.length) return;
+    const events = queue;
+    queue = [];
+    let state = useStore.getState();
+    let reachedEnd = false;
+    for (const ev of events) {
+      state = applyEvent(state, ev);
+      if (ev.type === 'message_end' || ev.type === 'agent_end') reachedEnd = true;
+    }
+    setFullState(state);
+    if (reachedEnd) persistThinkingDurations(state);
+  };
+
+  const scheduleFlush = () => {
+    if (rafId != null) return;
+    if (typeof requestAnimationFrame === 'function') {
+      rafId = requestAnimationFrame(flush);
+    } else {
+      flush();
+    }
+  };
+
+  /** 丢弃未应用的排队事件（切换/重置会话时调用，避免旧会话事件串场）。 */
+  const clearQueue = () => {
+    queue = [];
+    if (rafId != null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(rafId);
+    }
+    rafId = null;
+  };
+
   onPiEvent((env) => {
     if (env.workspace !== workspace) return;
-    setFullState(applyEvent(useStore.getState(), env.event));
+    queue.push(env.event);
+    scheduleFlush();
   }).then((un) => unsubs.push(un));
 
   onPiExit((env) => {
@@ -55,11 +110,16 @@ export function createAgentStore(workspace: string): AgentStoreApi {
   const loadMessages = (msgs: AgentMessage[], options?: LoadMessagesOptions) => {
     if (liveActivity && !options?.force) return;
     liveActivity = false;
-    setFullState({ ...initialAgentState(), messages: messagesFromAgent(msgs) });
+    clearQueue();
+    setFullState({
+      ...initialAgentState(),
+      messages: messagesFromAgent(msgs, getThinkingDuration),
+    });
   };
 
   const reset = () => {
     liveActivity = false;
+    clearQueue();
     setFullState(initialAgentState());
   };
 
@@ -70,6 +130,7 @@ export function createAgentStore(workspace: string): AgentStoreApi {
     reset,
     hasLiveActivity: () => liveActivity,
     destroy: () => {
+      clearQueue();
       for (const un of unsubs) un();
       unsubs.length = 0;
     },

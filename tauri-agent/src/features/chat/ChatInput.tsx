@@ -1,10 +1,37 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Flexbox } from '@lobehub/ui';
-import { ChatInputAreaInner, ChatSendButton } from '@lobehub/ui/chat';
+import { ChatInputAreaInner } from '@lobehub/ui/chat';
 import { createStyles } from 'antd-style';
 import { useAgentStore } from '../../stores/AgentStoreContext';
+import {
+  ChatInputProvider,
+  useChatInput,
+  type ChatInputContextValue,
+  type ImageAttachment,
+  type PromptImage,
+} from './input/ChatInputContext';
+import { ActionBar } from './input/ActionBar';
+import { SendArea } from './input/SendArea';
+import { AttachmentPreview } from './input/AttachmentPreview';
+import { DEFAULT_LEFT_ACTIONS, DEFAULT_RIGHT_ACTIONS, type ActionKey } from './input/config';
+import { SlashCommandMenu } from './input/SlashCommandMenu';
+import { useSlashMenu } from './input/useSlashMenu';
 
 const useStyles = createStyles(({ token, css }) => ({
+  surface: css`
+    position: absolute;
+    z-index: 20;
+    inset-block-end: 16px;
+    inset-inline: 16px;
+
+    padding: 12px;
+    border: 1px solid ${token.colorBorderSecondary};
+    border-radius: ${token.borderRadiusLG}px;
+
+    background: ${token.colorBgElevated};
+    box-shadow: ${token.boxShadowSecondary};
+    backdrop-filter: blur(8px);
+  `,
   inputWrap: css`
     border: 1px solid ${token.colorBorder};
     border-radius: ${token.borderRadiusLG}px;
@@ -14,55 +41,153 @@ const useStyles = createStyles(({ token, css }) => ({
 }));
 
 interface ChatInputProps {
-  onSend: (message: string) => Promise<void>;
-  onAbort: () => Promise<void>;
+  onSend: (message: string, images?: PromptImage[]) => Promise<void> | void;
+  onAbort: () => Promise<void> | void;
+  leftActions?: ActionKey[];
+  rightActions?: ActionKey[];
+  /** 上报输入框整体高度，供消息列表预留底部空间，避免遮挡。 */
+  onHeightChange?: (height: number) => void;
 }
 
-export function ChatInput({ onSend, onAbort }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  onAbort,
+  leftActions = DEFAULT_LEFT_ACTIONS,
+  rightActions = DEFAULT_RIGHT_ACTIONS,
+  onHeightChange,
+}: ChatInputProps) {
   const { useStore } = useAgentStore();
   const isStreaming = useStore((s) => s.isStreaming);
   const [value, setValue] = useState('');
-  const { styles } = useStyles();
+  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
 
-  const handleSend = () => {
+  const send = useCallback(() => {
     const text = value.trim();
-    if (!text || isStreaming) return;
+    if ((!text && attachments.length === 0) || isStreaming) return;
+    const images: PromptImage[] = attachments.map(({ type, mimeType, data }) => ({
+      type,
+      mimeType,
+      data,
+    }));
     setValue('');
-    void onSend(text);
-  };
+    setAttachments([]);
+    void onSend(text, images.length ? images : undefined);
+  }, [value, attachments, isStreaming, onSend]);
+
+  const stop = useCallback(() => {
+    void onAbort();
+  }, [onAbort]);
+
+  const ctx: ChatInputContextValue = useMemo(
+    () => ({
+      value,
+      setValue,
+      attachments,
+      addAttachments: (items) => setAttachments((prev) => [...prev, ...items]),
+      removeAttachment: (index) => setAttachments((prev) => prev.filter((_, i) => i !== index)),
+      isStreaming,
+      send,
+      stop,
+    }),
+    [value, attachments, isStreaming, send, stop],
+  );
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        bottom: 16,
-        left: 16,
-        right: 16,
-        zIndex: 20,
-        background: 'rgba(0, 0, 0, 0.8)',
-        backdropFilter: 'blur(8px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        borderRadius: 8,
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-        padding: 12,
-      }}
-    >
+    <ChatInputProvider value={ctx}>
+      <InputSurface
+        leftActions={leftActions}
+        rightActions={rightActions}
+        onHeightChange={onHeightChange}
+      />
+    </ChatInputProvider>
+  );
+}
+
+interface InputSurfaceProps {
+  leftActions: ActionKey[];
+  rightActions: ActionKey[];
+  onHeightChange?: (height: number) => void;
+}
+
+function InputSurface({ leftActions, rightActions, onHeightChange }: InputSurfaceProps) {
+  const { value, setValue, isStreaming, send } = useChatInput();
+  const { styles } = useStyles();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const {
+    textareaRef,
+    anchorRef,
+    open: slashOpen,
+    query: slashQuery,
+    slashContext,
+    close: closeSlashMenu,
+    handleInput,
+    handleSelectionChange,
+    handleOpenChange,
+    slashMenuOpen,
+  } = useSlashMenu(value, setValue);
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || !onHeightChange) return;
+    const report = () => onHeightChange(el.offsetHeight);
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onHeightChange]);
+
+  return (
+    <div ref={rootRef} className={styles.surface}>
       <Flexbox gap={8} align="stretch">
-        <div className={styles.inputWrap}>
+        <AttachmentPreview />
+        <div ref={anchorRef} className={styles.inputWrap}>
           <ChatInputAreaInner
+            ref={textareaRef}
             value={value}
             loading={isStreaming}
             placeholder="Type a message..."
             autoSize={{ minRows: 1, maxRows: 8 }}
-            onInput={setValue}
-            onSend={handleSend}
+            onInput={handleInput}
+            onSelect={handleSelectionChange}
+            onKeyUp={handleSelectionChange}
+            onKeyDown={(e) => {
+              if (slashMenuOpen) {
+                // Slash menu owns Enter/Escape while open: Esc closes it, Enter is
+                // consumed by the menu's document keydown listener to pick a command.
+                // onPressEnter below blocks the textarea newline, so never send here.
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  closeSlashMenu();
+                }
+                return;
+              }
+              // Menu closed: Enter sends, Shift+Enter adds a newline. Rely on the native
+              // isComposing flag so a stale IME state inside ChatInputAreaInner cannot
+              // swallow Enter and turn a send into a newline.
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            onPressEnter={(e) => {
+              if (slashMenuOpen) e.preventDefault();
+            }}
+          />
+          <SlashCommandMenu
+            open={slashOpen}
+            query={slashQuery}
+            slashContext={slashContext}
+            value={value}
+            anchorRef={anchorRef}
+            textareaRef={textareaRef}
+            onOpenChange={handleOpenChange}
+            onClose={closeSlashMenu}
           />
         </div>
-        <ChatSendButton
-          loading={isStreaming}
-          onSend={handleSend}
-          onStop={() => void onAbort()}
-        />
+        <Flexbox horizontal align="center" justify="space-between">
+          <ActionBar actions={leftActions} />
+          <SendArea actions={rightActions} />
+        </Flexbox>
       </Flexbox>
     </div>
   );

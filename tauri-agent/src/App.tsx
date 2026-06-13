@@ -1,11 +1,15 @@
 import { useEffect } from 'react';
-import { ThemeProvider, Header, ActionIcon, Flexbox } from '@lobehub/ui';
-import { PanelLeft, PanelRight, SquareTerminal } from 'lucide-react';
+import { ThemeProvider, ActionIcon, Flexbox } from '@lobehub/ui';
+import { Moon, PanelLeftOpen, PanelRightOpen, SquareTerminal, Sun } from 'lucide-react';
+import { PanelHeader } from './components/PanelHeader';
+import { ThemeBridge } from './components/ThemeBridge';
+import { useThemeStore } from './stores/themeStore';
 import { ChatView } from './features/chat/ChatView';
 import { SessionList } from './features/sessions/SessionList';
 import { RightPanel } from './features/panels';
 import { TerminalPanel } from './features/terminal/TerminalPanel';
 import { ResizeHandle } from './components/ResizeHandle';
+import { Titlebar } from './components/Titlebar';
 import { AgentStoreProvider, useAgentStoreContext } from './stores/AgentStoreContext';
 import { useSessionStore } from './store';
 import {
@@ -55,6 +59,9 @@ function Workspace() {
   const setTerminalHeight = useLayoutStore((s) => s.setTerminalHeight);
   const toggleTerminal = useLayoutStore((s) => s.toggleTerminal);
 
+  const appearance = useThemeStore((s) => s.appearance);
+  const toggleAppearance = useThemeStore((s) => s.toggleAppearance);
+
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
 
   const handleCreateSession = async () => {
@@ -80,24 +87,27 @@ function Workspace() {
   };
 
   return (
-    // 根容器：Sidebar | 右容器
-    <Flexbox horizontal style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      {/* Sidebar */}
-      {sidebarOpen && (
+    <Flexbox style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+      <Titlebar />
+      {/* 根容器：Sidebar | 右容器 */}
+      <Flexbox horizontal flex={1} style={{ minHeight: 0 }}>
+        {/* Sidebar：始终挂载，靠 DraggablePanel 的 expand 做收起/展开动画 */}
         <ResizeHandle
           placement="left"
           defaultSize={sidebarWidth}
           minSize={SIDEBAR_MIN_WIDTH}
           maxSize={SIDEBAR_MAX_WIDTH}
           onResize={setSidebarWidth}
+          expand={sidebarOpen}
+          onExpandChange={toggleSidebar}
         >
           <SessionList
             onCreateSession={handleCreateSession}
             onSwitchSession={handleSwitchSession}
             onDeleteSession={handleDeleteSession}
+            onToggleSidebar={toggleSidebar}
           />
         </ResizeHandle>
-      )}
 
       {/* 右容器：上部(Main+Right) / Terminal 竖向分割 */}
       <Flexbox flex={1} style={{ minWidth: 0, height: '100%' }}>
@@ -105,28 +115,31 @@ function Workspace() {
         <Flexbox horizontal flex={1} style={{ minHeight: 0 }}>
           {/* 主列：Header + Chat */}
           <Flexbox flex={1} style={{ minWidth: 0, height: '100%' }}>
-            <Header
-              logo={<span style={{ fontWeight: 700, fontSize: 16 }}>Hermes</span>}
+            <PanelHeader
+              left={
+                !sidebarOpen ? (
+                  <ActionIcon icon={PanelLeftOpen} title="Sidebar" onClick={toggleSidebar} />
+                ) : undefined
+              }
               actions={
                 <>
+                  {/* 主题：亮/暗切换 */}
+                  <ActionIcon
+                    icon={appearance === 'dark' ? Sun : Moon}
+                    title={appearance === 'dark' ? 'Light mode' : 'Dark mode'}
+                    onClick={toggleAppearance}
+                  />
+                  {/* 终端：顶部常驻 toggle（active 表示已打开），点击切换收起/展开 */}
                   <ActionIcon
                     icon={SquareTerminal}
                     active={terminalOpen}
                     title="Terminal"
                     onClick={toggleTerminal}
                   />
-                  <ActionIcon
-                    icon={PanelRight}
-                    active={rightPanelOpen}
-                    title="Panel"
-                    onClick={toggleRightPanel}
-                  />
-                  <ActionIcon
-                    icon={PanelLeft}
-                    active={sidebarOpen}
-                    title="Sidebar"
-                    onClick={toggleSidebar}
-                  />
+                  {/* 右面板：仅折叠时显示打开按钮，展开后由面板内折叠图标收起（对齐左侧栏） */}
+                  {!rightPanelOpen && (
+                    <ActionIcon icon={PanelRightOpen} title="Panel" onClick={toggleRightPanel} />
+                  )}
                 </>
               }
             />
@@ -135,32 +148,33 @@ function Workspace() {
             </Flexbox>
           </Flexbox>
 
-          {/* Right Panel */}
-          {rightPanelOpen && (
-            <ResizeHandle
-              placement="right"
-              defaultSize={rightPanelWidth}
-              minSize={RIGHT_PANEL_MIN_WIDTH}
-              maxSize={RIGHT_PANEL_MAX_WIDTH}
-              onResize={setRightPanelWidth}
-            >
-              <RightPanel />
-            </ResizeHandle>
-          )}
+          {/* Right Panel：始终挂载，靠 DraggablePanel 的 expand 做收起/展开动画 */}
+          <ResizeHandle
+            placement="right"
+            defaultSize={rightPanelWidth}
+            minSize={RIGHT_PANEL_MIN_WIDTH}
+            maxSize={RIGHT_PANEL_MAX_WIDTH}
+            onResize={setRightPanelWidth}
+            expand={rightPanelOpen}
+            onExpandChange={toggleRightPanel}
+          >
+            <RightPanel onCollapse={toggleRightPanel} />
+          </ResizeHandle>
         </Flexbox>
 
-        {/* Terminal（仅在 Main+Right 下方）*/}
-        {terminalOpen && (
-          <ResizeHandle
-            placement="bottom"
-            defaultSize={terminalHeight}
-            minSize={TERMINAL_MIN_HEIGHT}
-            maxSize={TERMINAL_MAX_HEIGHT}
-            onResize={setTerminalHeight}
-          >
-            <TerminalPanel />
-          </ResizeHandle>
-        )}
+        {/* Terminal（仅在 Main+Right 下方）：始终挂载，靠 DraggablePanel 的 expand 做收起/展开动画 */}
+        <ResizeHandle
+          placement="bottom"
+          defaultSize={terminalHeight}
+          minSize={TERMINAL_MIN_HEIGHT}
+          maxSize={TERMINAL_MAX_HEIGHT}
+          onResize={setTerminalHeight}
+          expand={terminalOpen}
+          onExpandChange={toggleTerminal}
+        >
+          <TerminalPanel />
+        </ResizeHandle>
+      </Flexbox>
       </Flexbox>
     </Flexbox>
   );
@@ -185,8 +199,11 @@ export default function App() {
     };
   }, []);
 
+  const appearance = useThemeStore((s) => s.appearance);
+
   return (
-    <ThemeProvider themeMode="dark">
+    <ThemeProvider themeMode={appearance}>
+      <ThemeBridge />
       <AgentStoreProvider workspace={WORKSPACE}>
         <Workspace />
       </AgentStoreProvider>

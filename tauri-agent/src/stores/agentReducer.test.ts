@@ -100,6 +100,32 @@ describe('applyEvent', () => {
     expect(text(msgs[1])).toBe('hi');
   });
 
+  it('accumulates thinking from thinking_delta and keeps it after message_end', () => {
+    let s = initialAgentState();
+    s = applyEvent(s, { type: 'message_start', message: { role: 'assistant', content: [] } } as AgentEvent);
+    s = applyEvent(s, {
+      type: 'message_update',
+      message: { role: 'assistant', content: [] },
+      assistantMessageEvent: { type: 'thinking_delta', delta: 'Let me ' },
+    } as AgentEvent);
+    s = applyEvent(s, {
+      type: 'message_update',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Hi' }] },
+      assistantMessageEvent: { type: 'thinking_delta', delta: 'think.' },
+    } as AgentEvent);
+    const mid = s.messages.at(-1)!;
+    expect(mid.kind === 'assistant' ? mid.thinking : '').toBe('Let me think.');
+    // 终态消息只含 text、不含 thinking 块：流式累积的思考不应被清空
+    s = applyEvent(s, {
+      type: 'message_end',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Hi' }] },
+    } as AgentEvent);
+    const last = s.messages.at(-1)!;
+    expect(last.kind === 'assistant' ? last.thinking : '').toBe('Let me think.');
+    expect(text(last)).toBe('Hi');
+    expect(last.kind === 'assistant' && last.streaming).toBe(false);
+  });
+
   it('message_end finalizes streaming assistant text', () => {
     let s = initialAgentState();
     s = applyEvent(s, { type: 'message_start', message: { role: 'assistant', content: [] } } as AgentEvent);

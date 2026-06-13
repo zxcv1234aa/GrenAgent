@@ -2,7 +2,19 @@ import type { AgentEvent, AgentMessage, AssistantMessageEvent } from '../lib/pi'
 
 export type ChatMessage =
   | { kind: 'user'; id: string; text: string }
-  | { kind: 'assistant'; id: string; text: string; thinking: string; streaming: boolean }
+  | {
+      kind: 'assistant';
+      id: string;
+      text: string;
+      thinking: string;
+      streaming: boolean;
+      /** pi 消息自带的 Unix ms 时间戳，用作推理时长持久化的 key。 */
+      timestamp?: number;
+      /** 推理开始时间戳（首个 thinking 出现时记起点），用于计算时长。 */
+      thinkingStartedAt?: number;
+      /** 推理耗时（ms），推理结束（正文开始或消息结束）时定格，用于「已深度思考（用时 X 秒）」。 */
+      thinkingDuration?: number;
+    }
   | { kind: 'tool'; id: string; toolCallId: string; toolName: string; args: unknown; result: unknown; status: 'running' | 'done' | 'error' };
 
 export interface AgentState {
@@ -19,6 +31,28 @@ export function initialAgentState(): AgentState {
 
 let counter = 0;
 const nextId = () => `m${++counter}`;
+
+/** 计算推理计时：首个 thinking 出现时记起点，正文出现或消息结束（final）时定格耗时。 */
+function thinkingTiming(
+  cur: { thinkingStartedAt?: number; thinkingDuration?: number },
+  thinkingText: string,
+  answerText: string,
+  final = false,
+): { thinkingStartedAt?: number; thinkingDuration?: number } {
+  let { thinkingStartedAt, thinkingDuration } = cur;
+  if (thinkingText.trim() && thinkingStartedAt == null) thinkingStartedAt = Date.now();
+  const reasoningEnded = final || answerText.trim().length > 0;
+  if (reasoningEnded && thinkingStartedAt != null && thinkingDuration == null) {
+    thinkingDuration = Date.now() - thinkingStartedAt;
+  }
+  return { thinkingStartedAt, thinkingDuration };
+}
+
+/** 读取 pi 消息的 Unix ms 时间戳（非法值返回 undefined）。 */
+function messageTimestamp(msg: AgentMessage): number | undefined {
+  const ts = (msg as { timestamp?: unknown }).timestamp;
+  return typeof ts === 'number' && Number.isFinite(ts) ? ts : undefined;
+}
 
 function extractText(msg: AgentMessage): { text: string; thinking: string } {
   let text = '';
@@ -59,16 +93,31 @@ export function applyEvent(state: AgentState, event: AgentEvent): AgentState {
       // pi 同一时刻只有一个 streamingMessage；重复 message_start 应复用而非叠空泡
       if (idx >= 0) {
         const cur = messages[idx] as Extract<ChatMessage, { kind: 'assistant' }>;
+        const nextText = text || cur.text;
+        const nextThinking = thinking || cur.thinking;
         messages[idx] = {
           ...cur,
-          text: text || cur.text,
-          thinking: thinking || cur.thinking,
+          text: nextText,
+          thinking: nextThinking,
+          timestamp: messageTimestamp(ev.message) ?? cur.timestamp,
+          ...thinkingTiming(cur, nextThinking, nextText),
         };
         return { ...state, messages };
       }
       return {
         ...state,
-        messages: [...messages, { kind: 'assistant', id: nextId(), text, thinking, streaming: true }],
+        messages: [
+          ...messages,
+          {
+            kind: 'assistant',
+            id: nextId(),
+            text,
+            thinking,
+            streaming: true,
+            timestamp: messageTimestamp(ev.message),
+            ...thinkingTiming({}, thinking, text),
+          },
+        ],
       };
     }
 
@@ -82,15 +131,35 @@ export function applyEvent(state: AgentState, event: AgentEvent): AgentState {
         if (!text && !thinking) return state;
         return {
           ...state,
-          messages: [...messages, { kind: 'assistant', id: nextId(), text, thinking, streaming: false }],
+          messages: [
+            ...messages,
+            {
+              kind: 'assistant',
+              id: nextId(),
+              text,
+              thinking,
+              streaming: false,
+              timestamp: messageTimestamp(ev.message),
+              ...thinkingTiming({}, thinking, text, true),
+            },
+          ],
         };
       }
-      // 仅含 tool call、无可见文本的 assistant 消息不展示（否则会叠成多条灰线）
-      if (!text && !thinking) {
+      const cur = messages[idx] as Extract<ChatMessage, { kind: 'assistant' }>;
+      // 终态消息可能不含 thinking 块（推理只在流式 delta 里给），保留流式累积的 thinking，避免完成后丢失。
+      const finalThinking = thinking || cur.thinking;
+      // 仅含 tool call、无可见文本/思考的 assistant 消息不展示（否则会叠成多条灰线）
+      if (!text && !finalThinking) {
         messages.splice(idx, 1);
       } else {
-        const cur = messages[idx] as Extract<ChatMessage, { kind: 'assistant' }>;
-        messages[idx] = { ...cur, text, thinking, streaming: false };
+        messages[idx] = {
+          ...cur,
+          text,
+          thinking: finalThinking,
+          streaming: false,
+          timestamp: messageTimestamp(ev.message) ?? cur.timestamp,
+          ...thinkingTiming(cur, finalThinking, text, true),
+        };
       }
       return { ...state, messages };
     }
@@ -98,15 +167,35 @@ export function applyEvent(state: AgentState, event: AgentEvent): AgentState {
     case 'message_update': {
       const ev = event as Extract<AgentEvent, { type: 'message_update' }>;
       const { text, thinking } = extractText(ev.message);
+      // 有些模型（如部分 OpenAI 兼容 / MiMo）只在流式 thinking_delta 里给推理、不写进 message.content，
+      // 这里把 delta 累积起来，作为 content 无 thinking 块时的兜底来源。
+      const ame = ev.assistantMessageEvent as AssistantMessageEvent | undefined;
+      const thinkingDelta =
+        ame && ame.type === 'thinking_delta' && typeof ame.delta === 'string' ? ame.delta : '';
       const messages = [...state.messages];
       const idx = lastIndex(messages, (m) => m.kind === 'assistant' && m.streaming);
       if (idx >= 0) {
         const cur = messages[idx] as Extract<ChatMessage, { kind: 'assistant' }>;
-        messages[idx] = { ...cur, text, thinking };
+        const nextThinking = thinking || cur.thinking + thinkingDelta;
+        messages[idx] = {
+          ...cur,
+          text,
+          thinking: nextThinking,
+          timestamp: messageTimestamp(ev.message) ?? cur.timestamp,
+          ...thinkingTiming(cur, nextThinking, text),
+        };
       } else {
-        messages.push({ kind: 'assistant', id: nextId(), text, thinking, streaming: true });
+        const nextThinking = thinking || thinkingDelta;
+        messages.push({
+          kind: 'assistant',
+          id: nextId(),
+          text,
+          thinking: nextThinking,
+          streaming: true,
+          timestamp: messageTimestamp(ev.message),
+          ...thinkingTiming({}, nextThinking, text),
+        });
       }
-      void (ev.assistantMessageEvent as AssistantMessageEvent);
       return { ...state, messages };
     }
 
@@ -171,8 +260,14 @@ export function addUserMessage(state: AgentState, text: string): AgentState {
   };
 }
 
-/** 从 pi get_messages 结果还原聊天列表（用于切换会话）。 */
-export function messagesFromAgent(msgs: AgentMessage[]): ChatMessage[] {
+/**
+ * 从 pi get_messages 结果还原聊天列表（用于切换会话）。
+ * pi 会话不存推理耗时，可传 getDuration 按消息 timestamp 回填（见 lib/thinkingDurations）。
+ */
+export function messagesFromAgent(
+  msgs: AgentMessage[],
+  getDuration?: (timestamp: number | undefined) => number | undefined,
+): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const msg of msgs) {
     if (msg.role === 'user') {
@@ -181,7 +276,16 @@ export function messagesFromAgent(msgs: AgentMessage[]): ChatMessage[] {
     } else if (msg.role === 'assistant') {
       const { text, thinking } = extractText(msg);
       if (text.trim() || thinking.trim()) {
-        out.push({ kind: 'assistant', id: nextId(), text, thinking, streaming: false });
+        const timestamp = messageTimestamp(msg);
+        out.push({
+          kind: 'assistant',
+          id: nextId(),
+          text,
+          thinking,
+          streaming: false,
+          timestamp,
+          thinkingDuration: thinking.trim() ? getDuration?.(timestamp) : undefined,
+        });
       }
     }
   }

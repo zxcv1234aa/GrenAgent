@@ -1,11 +1,13 @@
-import { Flexbox, Text, List, ActionIcon, Empty, type ListItemProps } from '@lobehub/ui';
-import { Plus, Trash2 } from 'lucide-react';
+import { Flexbox, List, ActionIcon, Empty, type ListItemProps } from '@lobehub/ui';
+import { PanelLeftClose, Plus, Trash2 } from 'lucide-react';
+import { PanelHeader } from '../../components/PanelHeader';
 import { useSessionStore } from '../../store';
 
 interface SessionListProps {
   onCreateSession: () => Promise<void>;
   onSwitchSession: (path: string) => Promise<void>;
   onDeleteSession: (path: string) => Promise<void>;
+  onToggleSidebar: () => void;
 }
 
 function timestampToDate(timestamp: string | null): number | undefined {
@@ -14,7 +16,12 @@ function timestampToDate(timestamp: string | null): number | undefined {
   return Number.isNaN(ms) ? undefined : ms;
 }
 
-export function SessionList({ onCreateSession, onSwitchSession, onDeleteSession }: SessionListProps) {
+export function SessionList({
+  onCreateSession,
+  onSwitchSession,
+  onDeleteSession,
+  onToggleSidebar,
+}: SessionListProps) {
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionPath = useSessionStore((state) => state.activeSessionPath);
 
@@ -38,16 +45,19 @@ export function SessionList({ onCreateSession, onSwitchSession, onDeleteSession 
 
   return (
     <Flexbox height="100%" style={{ minHeight: 0 }}>
-      <Flexbox
-        horizontal
-        align="center"
-        distribution="space-between"
-        padding={12}
-        flex="0 0 auto"
-      >
-        <Text strong>Sessions</Text>
-        <ActionIcon icon={Plus} title="New Session" onClick={() => void onCreateSession()} />
-      </Flexbox>
+      <PanelHeader
+        title="Sessions"
+        actions={
+          <>
+            <ActionIcon icon={Plus} title="New Session" onClick={() => void onCreateSession()} />
+            <ActionIcon
+              icon={PanelLeftClose}
+              title="Collapse sidebar"
+              onClick={onToggleSidebar}
+            />
+          </>
+        }
+      />
 
       <Flexbox flex={1} style={{ minHeight: 0, overflowY: 'auto' }}>
         {items.length === 0 ? (

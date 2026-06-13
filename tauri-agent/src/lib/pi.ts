@@ -91,6 +91,7 @@ export const pi = {
     invoke<void>('extension_ui_respond', { workspace, response }),
   getSessionStats: (workspace: string) =>
     invoke<SessionStats>('agent_get_session_stats', { workspace }),
+  getCommands: (workspace: string) => invoke<unknown>('agent_get_commands', { workspace }),
 };
 
 export interface SessionInfo {
