@@ -1,0 +1,137 @@
+import { useEffect, useRef, useState } from 'react';
+import { Input } from 'antd';
+import { Icon } from '@lobehub/ui';
+import { createStyles } from 'antd-style';
+import { Hand, LoaderCircle } from 'lucide-react';
+import { RowActions } from './RowActions';
+import { buildSessionMenuItems } from './useSessionMenu';
+
+const useStyles = createStyles(({ token, css }) => ({
+  row: css`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    margin: 0 6px;
+    padding: 0 8px 0 16px;
+    border-radius: 7px;
+    color: ${token.colorTextSecondary};
+    cursor: pointer;
+
+    &:hover {
+      background: ${token.colorFillTertiary};
+    }
+  `,
+  active: css`
+    color: ${token.colorText};
+    background: ${token.colorFill};
+
+    &:hover {
+      background: ${token.colorFill};
+    }
+  `,
+  title: css`
+    overflow: hidden;
+    flex: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  `,
+  spin: css`
+    display: inline-flex;
+    color: ${token.colorWarning};
+    animation: piSidebarSpin 1.1s linear infinite;
+
+    @keyframes piSidebarSpin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  `,
+  acts: css`
+    display: none;
+
+    .pi-session-row:hover & {
+      display: flex;
+    }
+  `,
+  editWrap: css`
+    display: flex;
+    align-items: center;
+    height: 28px;
+    margin: 0 6px;
+    padding: 0 8px 0 16px;
+  `,
+}));
+
+export interface SessionItemProps {
+  title: string;
+  active: boolean;
+  running: boolean;
+  waiting?: boolean;
+  pinned: boolean;
+  editing?: boolean;
+  onClick: () => void;
+  onPinToggle: () => void;
+  onRequestRename: () => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+}
+
+export function SessionItem(props: SessionItemProps) {
+  const { title, active, running, waiting, pinned, editing, onClick, onPinToggle, onRequestRename, onRename, onDelete } =
+    props;
+  const { styles, cx } = useStyles();
+  const [draft, setDraft] = useState(title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      setDraft(title);
+      inputRef.current?.focus();
+    }
+  }, [editing, title]);
+
+  if (editing) {
+    const submit = () => {
+      const v = draft.trim();
+      onRename(v && v !== title ? v : title);
+    };
+    return (
+      <div className={styles.editWrap}>
+        <Input
+          ref={inputRef as never}
+          data-testid="session-rename-input"
+          size="small"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+            else if (e.key === 'Escape') onRename(title);
+          }}
+          onBlur={submit}
+        />
+      </div>
+    );
+  }
+
+  const menuItems = buildSessionMenuItems({
+    pinned,
+    onPinToggle,
+    onRename: onRequestRename,
+    onDelete,
+  });
+
+  return (
+    <div className={cx('pi-session-row', styles.row, active && styles.active)} onClick={onClick}>
+      <span className={styles.title}>{title}</span>
+      {running && (
+        <span data-testid="session-running" className={styles.spin}>
+          <Icon icon={waiting ? Hand : LoaderCircle} size="small" />
+        </span>
+      )}
+      <span className={styles.acts}>
+        <RowActions menuItems={menuItems} />
+      </span>
+    </div>
+  );
+}
