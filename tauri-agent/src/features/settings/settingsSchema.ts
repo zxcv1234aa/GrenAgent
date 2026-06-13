@@ -79,6 +79,18 @@ export const SETTINGS_SCHEMA: SettingCategory[] = [
     ],
   },
   {
+    id: 'mcp',
+    title: 'MCP 服务器',
+    fields: [
+      {
+        key: 'MCP_SERVERS',
+        label: 'MCP Servers（JSON）',
+        type: 'text',
+        placeholder: '{"fs":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}',
+      },
+    ],
+  },
+  {
     id: 'safety',
     title: '安全',
     fields: [
