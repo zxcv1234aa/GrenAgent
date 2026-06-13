@@ -8,10 +8,12 @@ import imageGen from "./image-gen/index.js";
 import knowledgeRag from "./knowledge-rag/index.js";
 import longTermMemory from "./long-term-memory/index.js";
 import multiAgent from "./multi-agent/index.js";
+import safety from "./safety/index.js";
 import tts from "./tts/index.js";
 import webFetch from "./web-fetch/index.js";
 
 export {
+  safety,
   knowledgeRag,
   longTermMemory,
   webFetch,
@@ -22,8 +24,9 @@ export {
   imGateway,
 };
 
-// Order roughly by general usefulness; tweak as you like.
+// Order roughly by general usefulness; safety first so guardrails intercept earliest.
 export const allExtensions = [
+  safety,
   knowledgeRag,
   longTermMemory,
   webFetch,
