@@ -45,12 +45,14 @@ export default async function (pi: ExtensionAPI) {
   if (servers.length === 0) return;
 
   const clients: Client[] = [];
+  const registry = new Map<string, { status: "connected" | "failed"; tools: number; error?: string }>();
 
   for (const s of servers) {
     try {
       const client = await connect(s);
       clients.push(client);
       const { tools } = await withTimeout(client.listTools(), MCP_TIMEOUT_MS);
+      registry.set(s.name, { status: "connected", tools: tools.length });
       for (const t of tools) {
         pi.registerTool({
           name: `mcp__${sanitize(s.name)}__${sanitize(t.name)}`,
@@ -74,9 +76,24 @@ export default async function (pi: ExtensionAPI) {
       }
       console.error(`[mcp] connected "${s.name}" (${s.transport}); ${tools.length} tools registered`);
     } catch (e) {
-      console.error(`[mcp] failed to connect "${s.name}": ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      registry.set(s.name, { status: "failed", tools: 0, error: msg });
+      console.error(`[mcp] failed to connect "${s.name}": ${msg}`);
     }
   }
+
+  // Push connection status to the GUI (ConnectionsPanel) via setStatus, sent on
+  // each session_start so a freshly-mounted front-end picks up current status.
+  pi.on("session_start", async (_event, ctx) => {
+    if (!ctx.hasUI) return;
+    const summary = servers.map((s) => ({
+      name: s.name,
+      transport: s.transport,
+      status: registry.get(s.name)?.status ?? "failed",
+      tools: registry.get(s.name)?.tools ?? 0,
+    }));
+    ctx.ui.setStatus("mcp", JSON.stringify(summary));
+  });
 
   const cleanup = () => {
     for (const c of clients) void c.close().catch(() => {});

@@ -2,6 +2,7 @@ import { Modal } from '@lobehub/ui';
 import { useEffect, useState } from 'react';
 import { extensionUiRespond, onPiUiRequest, type PiUiRequestEnvelope } from '../../lib/pi';
 import { usePlanModeStore } from '../../stores/planModeStore';
+import { useMcpStatusStore, type McpServerStatus } from '../../stores/mcpStatusStore';
 
 /**
  * Renders extension UI requests (confirm/select) emitted by Pi extensions over
@@ -21,6 +22,15 @@ export function ExtensionUiHost() {
         const r = e.request as { statusKey?: unknown; statusText?: unknown };
         if (r.statusKey === 'plan-mode') {
           usePlanModeStore.getState().setStatus(typeof r.statusText === 'string' ? r.statusText : undefined);
+        } else if (r.statusKey === 'mcp') {
+          let servers: McpServerStatus[] = [];
+          try {
+            const parsed = typeof r.statusText === 'string' ? JSON.parse(r.statusText) : [];
+            if (Array.isArray(parsed)) servers = parsed as McpServerStatus[];
+          } catch {
+            servers = [];
+          }
+          useMcpStatusStore.getState().setServers(servers);
         }
         return;
       }

@@ -2,6 +2,7 @@ import { Flexbox } from '@lobehub/ui';
 import { useSettingsForm } from '../settings/useSettingsForm';
 import { SettingFieldInput } from '../settings/SettingField';
 import { CONNECTION_FIELDS } from '../settings/settingsSchema';
+import { useMcpStatusStore } from '../../stores/mcpStatusStore';
 
 const muted = 'var(--gren-fg-muted, #9aa1ac)';
 const border = '1px solid var(--gren-border, rgba(255,255,255,0.08))';
@@ -44,6 +45,8 @@ export function ConnectionsPanel() {
   const port = (values.IM_GATEWAY_PORT ?? '').trim() || '8765';
   const hasToken = (values.IM_GATEWAY_TOKEN ?? '').trim().length > 0;
   const mcpServers = parseMcpServers(values.MCP_SERVERS ?? '');
+  const liveMcp = useMcpStatusStore((s) => s.servers);
+  const liveMcpByName = new Map(liveMcp.map((s) => [s.name, s]));
 
   return (
     <Flexbox
@@ -136,19 +139,29 @@ export function ConnectionsPanel() {
             未配置 MCP server
           </div>
         ) : (
-          mcpServers.map((s) => (
-            <Flexbox
-              key={s.name}
-              horizontal
-              align="center"
-              gap={8}
-              data-testid={`mcp-server-${s.name}`}
-              style={{ border, borderRadius: 8, padding: '8px 11px', marginBlockEnd: 7 }}
-            >
-              <span style={{ fontSize: 12, flex: 1 }}>{s.name}</span>
-              <span style={{ fontSize: 11, color: muted }}>{s.transport}</span>
-            </Flexbox>
-          ))
+          mcpServers.map((s) => {
+            const live = liveMcpByName.get(s.name);
+            return (
+              <Flexbox
+                key={s.name}
+                horizontal
+                align="center"
+                gap={8}
+                data-testid={`mcp-server-${s.name}`}
+                style={{ border, borderRadius: 8, padding: '8px 11px', marginBlockEnd: 7 }}
+              >
+                <span style={{ fontSize: 12, flex: 1 }}>{s.name}</span>
+                <span style={{ fontSize: 11, color: muted }}>{s.transport}</span>
+                {live ? (
+                  <span style={{ fontSize: 11, color: live.status === 'connected' ? '#4ade80' : '#f87171' }}>
+                    {live.status === 'connected' ? `● ${live.tools} 工具` : '○ 失败'}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 11, color: muted }}>待连接</span>
+                )}
+              </Flexbox>
+            );
+          })
         )}
         <textarea
           data-testid="conn-field-MCP_SERVERS"

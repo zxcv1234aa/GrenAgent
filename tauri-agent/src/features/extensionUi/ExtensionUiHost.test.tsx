@@ -1,9 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { respond, setStatus } = vi.hoisted(() => ({
+const { respond, setStatus, setServers } = vi.hoisted(() => ({
   respond: vi.fn(() => Promise.resolve()),
   setStatus: vi.fn(),
+  setServers: vi.fn(),
 }));
 let emit: (e: unknown) => void = () => {};
 vi.mock('../../lib/pi', () => ({
@@ -16,6 +17,9 @@ vi.mock('../../lib/pi', () => ({
 vi.mock('../../stores/planModeStore', () => ({
   usePlanModeStore: { getState: () => ({ setStatus }) },
 }));
+vi.mock('../../stores/mcpStatusStore', () => ({
+  useMcpStatusStore: { getState: () => ({ setServers }) },
+}));
 
 import { ExtensionUiHost } from './ExtensionUiHost';
 
@@ -23,6 +27,7 @@ afterEach(() => {
   cleanup();
   respond.mockClear();
   setStatus.mockClear();
+  setServers.mockClear();
 });
 
 describe('ExtensionUiHost', () => {
@@ -51,5 +56,19 @@ describe('ExtensionUiHost', () => {
     emit({ workspace: '/ws', request: { id: 's1', method: 'setStatus', statusKey: 'plan-mode', statusText: '📋 Plan' } });
     expect(setStatus).toHaveBeenCalledWith('📋 Plan');
     expect(screen.queryByText('📋 Plan')).toBeNull();
+  });
+
+  it('routes setStatus(mcp) to the mcp status store', () => {
+    render(<ExtensionUiHost />);
+    emit({
+      workspace: '/ws',
+      request: {
+        id: 'm1',
+        method: 'setStatus',
+        statusKey: 'mcp',
+        statusText: '[{"name":"fs","transport":"stdio","status":"connected","tools":14}]',
+      },
+    });
+    expect(setServers).toHaveBeenCalledWith([{ name: 'fs', transport: 'stdio', status: 'connected', tools: 14 }]);
   });
 });
