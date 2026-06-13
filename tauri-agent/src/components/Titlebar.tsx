@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { ActionIcon } from '@lobehub/ui';
-import { createStyles } from 'antd-style';
-import { Maximize2, Minimize2, Minus, X } from 'lucide-react';
+import { createStaticStyles, cssVar } from 'antd-style';
+import { Maximize2, Minimize2, Minus, Moon, Sun, X } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { useThemeStore } from '../stores/themeStore';
 
 export const TITLE_BAR_HEIGHT = 38;
 
 const appWindow = getCurrentWindow();
 
-const useStyles = createStyles(({ token, css }) => ({
+const styles = createStaticStyles(({ css }) => ({
   bar: css`
     display: flex;
     flex: 0 0 auto;
@@ -17,9 +18,9 @@ const useStyles = createStyles(({ token, css }) => ({
 
     height: ${TITLE_BAR_HEIGHT}px;
     padding-inline: 12px;
-    border-block-end: 1px solid ${token.colorBorderSecondary};
+    border-block-end: 1px solid ${cssVar.colorBorderSecondary};
 
-    background: ${token.colorBgContainer};
+    background: ${cssVar.colorBgContainer};
     user-select: none;
   `,
   title: css`
@@ -28,7 +29,7 @@ const useStyles = createStyles(({ token, css }) => ({
 
     font-size: 13px;
     font-weight: 700;
-    color: ${token.colorText};
+    color: ${cssVar.colorText};
   `,
   controls: css`
     display: flex;
@@ -37,27 +38,28 @@ const useStyles = createStyles(({ token, css }) => ({
   `,
   control: css`
     border-radius: 8px;
-    color: ${token.colorTextSecondary};
+    color: ${cssVar.colorTextSecondary};
 
     &:hover {
-      color: ${token.colorText};
-      background: ${token.colorFillTertiary};
+      color: ${cssVar.colorText};
+      background: ${cssVar.colorFillTertiary};
     }
   `,
   close: css`
     border-radius: 8px;
-    color: ${token.colorTextSecondary};
+    color: ${cssVar.colorTextSecondary};
 
     &:hover {
-      color: ${token.colorBgBase};
-      background: ${token.colorError};
+      color: ${cssVar.colorBgBase};
+      background: ${cssVar.colorError};
     }
   `,
 }));
 
 export function Titlebar() {
-  const { styles } = useStyles();
   const [maximized, setMaximized] = useState(false);
+  const appearance = useThemeStore((s) => s.appearance);
+  const toggleAppearance = useThemeStore((s) => s.toggleAppearance);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -78,6 +80,13 @@ export function Titlebar() {
         Hermes
       </span>
       <div className={styles.controls}>
+        <ActionIcon
+          icon={appearance === 'dark' ? Sun : Moon}
+          size={{ blockSize: 28, size: 14 }}
+          title={appearance === 'dark' ? '切换浅色主题' : '切换深色主题'}
+          className={styles.control}
+          onClick={toggleAppearance}
+        />
         <ActionIcon
           icon={Minus}
           size={{ blockSize: 28, size: 14 }}
