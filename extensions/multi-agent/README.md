@@ -1,0 +1,52 @@
+# pi-multi-agent
+
+为 [Pi coding agent](https://github.com/earendil-works/pi) 写的**多 agent 编排扩展**。
+
+给 agent 加上 `spawn_agent` 工具:把任务委派给**隔离的 pi 子进程**(各自独立上下文窗口),支持单个或并行多个,汇总结果。思路对齐官方 `examples/extensions/subagent/`(`pi --mode json -p --no-session`)。**零第三方依赖**。
+
+## 能力
+
+| 类型 | 名称 | 说明 |
+|---|---|---|
+| 工具(LLM 可调) | `spawn_agent` | `task`(单个)或 `tasks`(并行,最多 4 并发);可选 `model` |
+
+## 配置
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `PI_BIN` | `pi`(走 PATH) | 子进程用的 pi 可执行;可设为绝对路径或包装脚本 |
+| `SUBAGENT_TIMEOUT_MS` | `120000` | 单个子 agent 超时(到点 kill) |
+
+> 子进程**继承当前环境变量**(包括 provider key),所以主进程能跑,子 agent 才能跑。
+
+## 安装 / 用法
+
+```bash
+# 确保 pi 在 PATH,或设 PI_BIN 指向可执行
+pi -e ./extensions/multi-agent/index.ts
+# 会话里:
+> 并行做三件事:1) 统计 src 行数 2) 列出 TODO 3) 找出最大的文件
+  (agent 调 spawn_agent{tasks:[...]},并行跑 3 个子进程并汇总)
+```
+
+## 文件结构
+
+```text
+multi-agent/
+├── index.ts       # spawn_agent 工具(single + parallel,并发上限 4)
+├── runner.ts      # spawn pi --mode json -p,解析 JSON 事件流取最终输出
+├── package.json
+└── README.md
+```
+
+## 进阶扩展点
+
+1. **链式(chain)**:像官方 subagent 那样支持 `chain`,把上一个输出 `{previous}` 注入下一个任务。
+2. **命名 agent / 角色**:加载 `.pi/agents/*.md` 定义专家子 agent(systemPrompt + 工具集),`spawn_agent` 按名选用。
+3. **成本/用量回传**:解析子进程 JSON 里的 usage,汇总 token/费用。
+4. **流式进度**:用 `onUpdate` 把子 agent 的中间输出实时回传父会话。
+
+## 注意
+
+- 包名按官方新名 `@earendil-works/*` + `typebox`;旧包改 `index.ts` 顶部 import。
+- 真实编排需要 pi 子进程能访问 LLM(provider key)。解析最终输出对 `pi --mode json` 的事件格式做了启发式处理 + 兜底返回 stdout 尾部;若你的 pi 版本事件结构不同,调 `runner.ts` 的 `extractFinalText` 即可。

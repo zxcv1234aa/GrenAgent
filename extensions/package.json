@@ -1,0 +1,26 @@
+{
+  "name": "pi-extensions-pack",
+  "version": "0.1.0",
+  "description": "A pack of LobeHub-inspired Pi extensions: knowledge-rag, long-term-memory, web-fetch, image-gen, code-review, multi-agent.",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "rag", "memory", "web", "image", "code-review", "multi-agent"],
+  "license": "MIT",
+  "pi": {
+    "extensions": [
+      "./knowledge-rag/index.ts",
+      "./long-term-memory/index.ts",
+      "./web-fetch/index.ts",
+      "./image-gen/index.ts",
+      "./code-review/index.ts",
+      "./multi-agent/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "typebox": "*"
+  }
+}
