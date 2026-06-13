@@ -56,8 +56,39 @@ export interface ExtensionUiRequest {
   [k: string]: unknown;
 }
 
+export interface OpenWorkspaceResult {
+  restoredSession: string | null;
+  sessionFile: string | null;
+}
+
+export interface KbStats {
+  chunks: number;
+  sources: number;
+  model: string | null;
+}
+export interface KbSource {
+  source: string;
+  chunks: number;
+}
+export interface KbChunk {
+  id: string;
+  text: string;
+}
+export interface MemStats {
+  project: number;
+  global: number;
+}
+export interface MemItem {
+  id: string;
+  text: string;
+  category: string | null;
+  createdAt: number;
+  scope: 'project' | 'global';
+}
+
 export const pi = {
-  openWorkspace: (workspace: string) => invoke<void>('open_workspace', { workspace }),
+  openWorkspace: (workspace: string) =>
+    invoke<OpenWorkspaceResult>('open_workspace', { workspace }),
   closeWorkspace: (workspace: string) => invoke<void>('close_workspace', { workspace }),
   prompt: (
     workspace: string,
@@ -95,6 +126,12 @@ export const pi = {
   getSessionStats: (workspace: string) =>
     invoke<SessionStats>('agent_get_session_stats', { workspace }),
   getCommands: (workspace: string) => invoke<unknown>('agent_get_commands', { workspace }),
+  kbStats: (workspace: string) => invoke<KbStats>('kb_stats', { workspace }),
+  kbSources: (workspace: string) => invoke<KbSource[]>('kb_sources', { workspace }),
+  kbChunks: (workspace: string, source: string) =>
+    invoke<KbChunk[]>('kb_chunks', { workspace, source }),
+  memStats: (workspace: string) => invoke<MemStats>('mem_stats', { workspace }),
+  memList: (workspace: string) => invoke<MemItem[]>('mem_list', { workspace }),
 };
 
 export interface SessionInfo {

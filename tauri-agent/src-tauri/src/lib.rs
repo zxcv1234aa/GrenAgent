@@ -1,7 +1,7 @@
 mod commands;
 mod pi;
-mod state;
 mod security;
+mod state;
 
 use std::sync::Arc;
 
@@ -75,6 +75,11 @@ pub fn run() {
             commands::files::write_file,
             commands::git::get_git_status,
             commands::git::get_git_diff,
+            commands::knowledge::kb_stats,
+            commands::knowledge::kb_sources,
+            commands::knowledge::kb_chunks,
+            commands::memory::mem_stats,
+            commands::memory::mem_list,
             commands::terminal::execute_command,
             commands::shell::shell_start,
             commands::shell::shell_write,
