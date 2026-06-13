@@ -7,6 +7,8 @@ vi.mock('../knowledge/KnowledgePanel', () => ({ KnowledgePanel: () => <div>KB_PA
 vi.mock('../memory/MemoryPanel', () => ({ MemoryPanel: () => <div>MEM_PANEL</div> }));
 vi.mock('../review/ReviewPanel', () => ({ ReviewPanel: () => <div>RV_PANEL</div> }));
 vi.mock('../create/CreatePanel', () => ({ CreatePanel: () => <div>CR_PANEL</div> }));
+vi.mock('../settings/SettingsPanel', () => ({ SettingsPanel: () => <div>SET_PANEL</div> }));
+vi.mock('../connections/ConnectionsPanel', () => ({ ConnectionsPanel: () => <div>CONN_PANEL</div> }));
 
 beforeEach(() => {
   useModuleStore.setState({ activeModule: 'chat' });
@@ -22,33 +24,19 @@ describe('ModuleContainer', () => {
     expect(screen.getByText('CHAT_CONTENT')).toBeTruthy();
   });
 
-  it('renders KnowledgePanel for knowledge module', () => {
-    useModuleStore.setState({ activeModule: 'knowledge' });
-    render(<ModuleContainer chat={<div>CHAT_CONTENT</div>} />);
-    expect(screen.getByText('KB_PANEL')).toBeTruthy();
-  });
-
-  it('renders MemoryPanel for memory module', () => {
-    useModuleStore.setState({ activeModule: 'memory' });
-    render(<ModuleContainer chat={<div>CHAT_CONTENT</div>} />);
-    expect(screen.getByText('MEM_PANEL')).toBeTruthy();
-  });
-
-  it('renders ReviewPanel for review module', () => {
-    useModuleStore.setState({ activeModule: 'review' });
-    render(<ModuleContainer chat={<div>CHAT_CONTENT</div>} />);
-    expect(screen.getByText('RV_PANEL')).toBeTruthy();
-  });
-
-  it('renders CreatePanel for create module', () => {
-    useModuleStore.setState({ activeModule: 'create' });
-    render(<ModuleContainer chat={<div>CHAT_CONTENT</div>} />);
-    expect(screen.getByText('CR_PANEL')).toBeTruthy();
-  });
-
-  it('renders placeholder for not-yet-built modules', () => {
-    useModuleStore.setState({ activeModule: 'connections' });
-    render(<ModuleContainer chat={<div>CHAT_CONTENT</div>} />);
-    expect(screen.getByTestId('placeholder-panel').textContent).toContain('连接');
-  });
+  const cases: [string, string][] = [
+    ['knowledge', 'KB_PANEL'],
+    ['memory', 'MEM_PANEL'],
+    ['review', 'RV_PANEL'],
+    ['create', 'CR_PANEL'],
+    ['settings', 'SET_PANEL'],
+    ['connections', 'CONN_PANEL'],
+  ];
+  for (const [mod, text] of cases) {
+    it(`renders ${text} for ${mod} module`, () => {
+      useModuleStore.setState({ activeModule: mod as never });
+      render(<ModuleContainer chat={<div>CHAT_CONTENT</div>} />);
+      expect(screen.getByText(text)).toBeTruthy();
+    });
+  }
 });

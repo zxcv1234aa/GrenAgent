@@ -1,26 +1,30 @@
 import type { ReactNode } from 'react';
-import { type ModuleId, useModuleStore } from '../../stores/moduleStore';
-import { PlaceholderPanel } from './PlaceholderPanel';
+import { useModuleStore } from '../../stores/moduleStore';
 import { KnowledgePanel } from '../knowledge/KnowledgePanel';
 import { MemoryPanel } from '../memory/MemoryPanel';
 import { ReviewPanel } from '../review/ReviewPanel';
 import { CreatePanel } from '../create/CreatePanel';
-
-const MODULE_TITLES: Record<Exclude<ModuleId, 'chat'>, string> = {
-  knowledge: '知识库',
-  memory: '记忆',
-  review: '审查',
-  create: '创作',
-  connections: '连接',
-  settings: '设置',
-};
+import { SettingsPanel } from '../settings/SettingsPanel';
+import { ConnectionsPanel } from '../connections/ConnectionsPanel';
 
 export function ModuleContainer({ chat }: { chat: ReactNode }) {
   const activeModule = useModuleStore((s) => s.activeModule);
-  if (activeModule === 'chat') return <>{chat}</>;
-  if (activeModule === 'knowledge') return <KnowledgePanel />;
-  if (activeModule === 'memory') return <MemoryPanel />;
-  if (activeModule === 'review') return <ReviewPanel />;
-  if (activeModule === 'create') return <CreatePanel />;
-  return <PlaceholderPanel title={MODULE_TITLES[activeModule]} />;
+  switch (activeModule) {
+    case 'chat':
+      return <>{chat}</>;
+    case 'knowledge':
+      return <KnowledgePanel />;
+    case 'memory':
+      return <MemoryPanel />;
+    case 'review':
+      return <ReviewPanel />;
+    case 'create':
+      return <CreatePanel />;
+    case 'settings':
+      return <SettingsPanel />;
+    case 'connections':
+      return <ConnectionsPanel />;
+    default:
+      return <>{chat}</>;
+  }
 }
