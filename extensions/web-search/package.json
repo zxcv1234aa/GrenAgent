@@ -1,0 +1,18 @@
+{
+  "name": "pi-web-search",
+  "version": "0.1.0",
+  "description": "Web search (Tavily/Brave) for the Pi coding agent — summary + result links.",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "web", "search"],
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}
