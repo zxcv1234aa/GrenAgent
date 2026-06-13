@@ -65,4 +65,22 @@ describe('renderExtensionCard', () => {
     fireEvent.click(screen.getByTestId('open-file-speak'));
     expect(openPath).toHaveBeenCalledWith('/proj/.pi/audio/speech_1.mp3');
   });
+
+  it('todo shows progress and items', () => {
+    renderCard('todo', {
+      content: [{ type: 'text', text: 'Added todo #1: write tests' }],
+      details: {
+        action: 'add',
+        nextId: 3,
+        todos: [
+          { id: 1, text: 'write tests', done: true },
+          { id: 2, text: 'ship it', done: false },
+        ],
+      },
+    });
+    expect(screen.getByTestId('card-todo')).toBeTruthy();
+    expect(screen.getByText('1/2 完成')).toBeTruthy();
+    expect(screen.getByText(/write tests/)).toBeTruthy();
+    expect(screen.getByText(/ship it/)).toBeTruthy();
+  });
 });

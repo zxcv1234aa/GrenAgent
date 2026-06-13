@@ -3,11 +3,14 @@ import { openPath } from '@tauri-apps/plugin-opener';
 import {
   BookPlus,
   Brain,
+  CheckSquare,
   ExternalLink,
   Globe,
   Image as ImageIcon,
+  ListChecks,
   Network,
   Search,
+  Square,
   Volume2,
 } from 'lucide-react';
 import type { CSSProperties, FC, ReactNode } from 'react';
@@ -174,6 +177,39 @@ const SpeakCard: FC<ExtensionCardProps> = ({ result }) => {
   );
 };
 
+const TodoCard: FC<ExtensionCardProps> = ({ result }) => {
+  const d = getDetails(result);
+  const todos = Array.isArray(d?.todos)
+    ? (d!.todos as Array<{ id?: unknown; text?: unknown; done?: unknown }>)
+    : [];
+  const done = todos.filter((t) => t.done).length;
+  return (
+    <Flexbox gap={6} data-testid="card-todo">
+      <Flexbox horizontal align="center" gap={6}>
+        <Icon icon={ListChecks} size={14} />
+        <span style={{ fontSize: 12 }}>{todos.length ? `${done}/${todos.length} 完成` : '暂无待办'}</span>
+      </Flexbox>
+      {todos.length > 0 && (
+        <Flexbox gap={2}>
+          {todos.map((t, i) => (
+            <Flexbox horizontal align="center" gap={6} key={i}>
+              <Icon icon={t.done ? CheckSquare : Square} size={13} />
+              <span
+                style={{
+                  fontSize: 12,
+                  ...(t.done ? { color: 'var(--gren-fg-muted, #9aa1ac)', textDecoration: 'line-through' } : {}),
+                }}
+              >
+                #{asString(t.id)} {asString(t.text)}
+              </span>
+            </Flexbox>
+          ))}
+        </Flexbox>
+      )}
+    </Flexbox>
+  );
+};
+
 const EXTENSION_CARD_RENDERERS: Record<string, FC<ExtensionCardProps>> = {
   kb_search: KbSearchCard,
   kb_add: KbAddCard,
@@ -183,6 +219,7 @@ const EXTENSION_CARD_RENDERERS: Record<string, FC<ExtensionCardProps>> = {
   spawn_agent: SpawnAgentCard,
   fetch_url: FetchUrlCard,
   speak: SpeakCard,
+  todo: TodoCard,
 };
 
 export function renderExtensionCard(props: ExtensionCardProps): ReactNode | null {

@@ -8,6 +8,7 @@ import {
   Folder,
   Globe,
   Image,
+  ListChecks,
   Network,
   Search,
   Terminal,
@@ -69,6 +70,7 @@ export function toolMeta(toolName: string): { icon: LucideIcon } {
   if (name === 'spawn_agent') return { icon: Network };
   if (name === 'fetch_url') return { icon: Globe };
   if (name === 'speak') return { icon: Volume2 };
+  if (name === 'todo') return { icon: ListChecks };
   return { icon: Wrench };
 }
 
