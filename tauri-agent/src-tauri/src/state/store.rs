@@ -15,7 +15,10 @@ pub struct AppStateStore {
 impl AppStateStore {
     pub fn new(path: PathBuf) -> Self {
         let state = AppState::load(&path);
-        Self { inner: Arc::new(Mutex::new(state)), path }
+        Self {
+            inner: Arc::new(Mutex::new(state)),
+            path,
+        }
     }
 
     /// 修改并立即持久化（错误打印，不致命）。
@@ -36,9 +39,21 @@ impl AppStateStore {
     }
 
     pub async fn is_approved(&self, workspace: &str) -> bool {
-        self.inner
-            .lock()
-            .await
-            .is_workspace_approved(workspace)
+        self.inner.lock().await.is_workspace_approved(workspace)
+    }
+
+    /// 读取要注入 sidecar 的 env 设置（已过滤空值）。
+    pub async fn settings_env(&self) -> std::collections::HashMap<String, String> {
+        self.inner.lock().await.settings_env()
+    }
+
+    /// 读取完整设置表（含空值，供前端表单回填）。
+    pub async fn settings_all(&self) -> std::collections::HashMap<String, String> {
+        self.inner.lock().await.settings.clone()
+    }
+
+    /// 整体替换设置并持久化。
+    pub async fn replace_settings(&self, settings: std::collections::HashMap<String, String>) {
+        self.update(|st| st.replace_settings(settings)).await;
     }
 }

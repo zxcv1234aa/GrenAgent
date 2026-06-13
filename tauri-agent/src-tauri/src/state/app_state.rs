@@ -17,6 +17,9 @@ pub struct AppState {
     pub window: Option<WindowState>,
     #[serde(default)]
     pub approved_workspaces: HashSet<String>,
+    /// extension env 设置（key=env 名，value=字符串值；空值视为未设）。
+    #[serde(default)]
+    pub settings: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +77,20 @@ impl AppState {
     pub fn approve_workspace(&mut self, path: String) {
         self.approved_workspaces.insert(path);
     }
+
+    /// 整体替换 env 设置（前端每次提交完整表单）。
+    pub fn replace_settings(&mut self, settings: HashMap<String, String>) {
+        self.settings = settings;
+    }
+
+    /// 返回要注入 sidecar 的 env（过滤空值/空白）。
+    pub fn settings_env(&self) -> HashMap<String, String> {
+        self.settings
+            .iter()
+            .filter(|(_, v)| !v.trim().is_empty())
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -92,7 +109,10 @@ mod tests {
         st.save(&path).unwrap();
 
         let reloaded = AppState::load(&path);
-        assert_eq!(reloaded.recent_workspaces.first().map(|s| s.as_str()), Some("/ws/a"));
+        assert_eq!(
+            reloaded.recent_workspaces.first().map(|s| s.as_str()),
+            Some("/ws/a")
+        );
         assert_eq!(reloaded.last_session("/ws/a"), Some("/sessions/a.jsonl"));
     }
 
@@ -110,12 +130,39 @@ mod tests {
         }
         assert_eq!(st.recent_workspaces.len(), 20);
         assert_eq!(st.recent_workspaces[0], "/ws/24"); // 最近的置顶
-        // 重新 touch 一个已存在的：应置顶且不重复
+                                                       // 重新 touch 一个已存在的：应置顶且不重复
         st.touch_workspace("/ws/10");
         assert_eq!(st.recent_workspaces[0], "/ws/10");
         assert_eq!(
-            st.recent_workspaces.iter().filter(|w| w.as_str() == "/ws/10").count(),
+            st.recent_workspaces
+                .iter()
+                .filter(|w| w.as_str() == "/ws/10")
+                .count(),
             1
         );
+    }
+
+    #[test]
+    fn settings_roundtrip_and_env_filters_empty() {
+        let dir = std::env::temp_dir().join(format!("pi-set-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("app-state.json");
+
+        let mut st = AppState::load(&path);
+        let mut m = HashMap::new();
+        m.insert("OPENAI_API_KEY".to_string(), "sk-x".to_string());
+        m.insert("IMAGE_SIZE".to_string(), "  ".to_string());
+        st.replace_settings(m);
+        st.save(&path).unwrap();
+
+        let reloaded = AppState::load(&path);
+        assert_eq!(
+            reloaded.settings.get("OPENAI_API_KEY").map(|s| s.as_str()),
+            Some("sk-x")
+        );
+        let env = reloaded.settings_env();
+        assert_eq!(env.get("OPENAI_API_KEY").map(|s| s.as_str()), Some("sk-x"));
+        assert!(!env.contains_key("IMAGE_SIZE"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
