@@ -67,10 +67,13 @@ export const SETTINGS_SCHEMA: SettingCategory[] = [
   },
   {
     id: 'web',
-    title: '网页抓取 / 子代理',
+    title: '网页 / 搜索 / 子代理',
     fields: [
       { key: 'FETCH_MAX_CHARS', label: '抓取最大字符', type: 'number', placeholder: '20000' },
       { key: 'FETCH_TIMEOUT_MS', label: '抓取超时(ms)', type: 'number', placeholder: '15000' },
+      { key: 'WEB_SEARCH_PROVIDER', label: '搜索引擎（tavily/brave，默认 tavily）', type: 'text', placeholder: 'tavily' },
+      { key: 'TAVILY_API_KEY', label: 'Tavily API Key', type: 'password', placeholder: 'tvly-...' },
+      { key: 'BRAVE_API_KEY', label: 'Brave Search API Key', type: 'password' },
       { key: 'SUBAGENT_TIMEOUT_MS', label: '子代理超时(ms)', type: 'number', placeholder: '120000' },
       { key: 'PI_BIN', label: '子代理可执行文件（留空＝复用本体）', type: 'text', placeholder: '默认：sidecar 自身' },
     ],
