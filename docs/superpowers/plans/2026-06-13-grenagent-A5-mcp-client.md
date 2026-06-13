@@ -8,6 +8,26 @@
 
 ---
 
+## 实施状态（2026-06-13）
+
+A5 全部 6 任务完成，逐任务提交：
+
+- ✅ 任务 1 config 纯函数 + 单测（5/5）
+- ✅ 任务 2 MCP client（async factory：连接 stdio/SSE + `registerTool` 转发 `callTool`）
+- ✅ 任务 3 注册 + `@modelcontextprotocol/sdk` 依赖 + 重建（4999 modules）
+- ✅ 任务 4 settings `MCP_SERVERS`（独立「MCP 服务器」分类）
+- ✅ 任务 5 ConnectionsPanel MCP 区（配置推导；测试 3/3 + 前端 tsc 0）
+- ✅ 任务 6 端到端：**stdio 实测连上 `server-filesystem`，14 tools 注册为 `mcp__fs__*`，agent 识别并列出**，进程 12s 正常退出
+
+**技术 gate 全通过**（用户最关心）：`@modelcontextprotocol/sdk` 能被 `bun --compile` 打包；stdio 子进程在编译二进制内 spawn 成功。
+**实现中修的 bug**：连接超时未清理 transport → stdio 子进程泄漏 / 进程不退出 → 已加 `client.close()` 清理。
+**待用户 app 内**：ConnectionsPanel MCP 区渲染 + 配置真实 server 在 GUI 调用。
+**YAGNI 未做**：OAuth、StreamableHTTP、per-session 生命周期、sidecar→前端实时状态通道。
+
+> 下方为原始计划步骤（复选框保留为原始拆解；实际完成情况以本节为准）。
+
+---
+
 ## 关键发现（实现前排查）
 
 1. **pi 0.78 无内置 MCP**（`dist/*.d.ts` 无 `mcp` 匹配）→ 需自研 client，符合 spec。
