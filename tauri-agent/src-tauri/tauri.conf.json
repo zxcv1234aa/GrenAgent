@@ -13,10 +13,13 @@
     "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "tauri-agent",
         "width": 800,
         "height": 600,
-        "decorations": false
+        "decorations": false,
+        "visible": false,
+        "backgroundColor": "#0b0d12"
       }
     ],
     "security": {
