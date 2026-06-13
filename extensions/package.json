@@ -12,7 +12,9 @@
       "./web-fetch/index.ts",
       "./image-gen/index.ts",
       "./code-review/index.ts",
-      "./multi-agent/index.ts"
+      "./multi-agent/index.ts",
+      "./tts/index.ts",
+      "./im-gateway/index.ts"
     ]
   },
   "peerDependencies": {

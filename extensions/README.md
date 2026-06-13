@@ -12,8 +12,10 @@
 | [`image-gen`](./image-gen) | `generate_image` | 是 | 文生图(OpenAI 兼容) |
 | [`code-review`](./code-review) | `git_diff` `review_note` `/review` | 否 | 结构化代码审查 + 报告 |
 | [`multi-agent`](./multi-agent) | `spawn_agent` | 子 agent 需 | 委派隔离 pi 子进程(单个/并行) |
+| [`tts`](./tts) | `speak` | 是 | 文字转语音(OpenAI 兼容) |
+| [`im-gateway`](./im-gateway) | `/imgateway` + webhook | 否 | HTTP 网关,接入 IM 平台 |
 
-合计 **9 个工具 + 3 个命令**。
+合计 **10 个工具 + 4 个命令**(8 个 extension)。
 
 ## 一键加载全部
 

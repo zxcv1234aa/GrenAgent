@@ -15,6 +15,7 @@
 | 命令 | `/memory list` `/memory forget <id>` `/memory clear [project\|global\|all]` | 人工管理 |
 | 自动召回 | `before_agent_start` 钩子 | 每次提问自动召回(两级合并)并注入(`MEMORY_AUTO_INJECT=0` 关闭) |
 | 自动捕获 | `before_agent_start` 钩子 | 用户说「记住:xxx」/「remember: xxx」时自动存(`MEMORY_AUTO_CAPTURE=0` 关闭) |
+| 自动提取 | `agent_end` 钩子 | 每轮对话后用子 agent 抽取要点存入记忆(`MEMORY_EXTRACT=1` 开启,默认关) |
 
 存储(两级):项目级 `<cwd>/.pi/memory/memory.db` + 全局 `~/.pi/agent/memory.db`(**node:sqlite**,跨重启保留)。记忆**不分块**(每条原子事实),embedding 存 Float32 BLOB,零第三方依赖。
 
@@ -42,6 +43,8 @@ pi install git:github.com/<you>/<repo>
 | `MEMORY_AUTO_TOPK` | `5` | 自动注入的记忆条数 |
 | `MEMORY_AUTO_CAPTURE` | `1`(开启) | 设 `0` 关闭「记住:xxx」自动捕获 |
 | `MEMORY_GLOBAL_DB` | `~/.pi/agent/memory.db` | 全局记忆库路径(可自定义) |
+| `MEMORY_EXTRACT` | `0`(关闭) | 设 `1` 开启「对话自动提取」(每轮多一次 LLM 调用) |
+| `PI_BIN` | `pi` | 自动提取用的 pi 可执行(PATH 或绝对路径) |
 
 ## 用法示例
 
@@ -67,6 +70,7 @@ long-term-memory/
 ├── index.ts       # memory_save / memory_recall 工具 + /memory 命令 + 自动召回注入
 ├── store.ts       # node:sqlite 记忆存储(不分块、Float32 BLOB)、cosine / 关键词召回
 ├── embedding.ts   # OpenAI 兼容 embedding + 自动降级
+├── extractor.ts   # agent_end 用子 agent 从对话抽取记忆
 ├── package.json   # Pi Package 清单
 └── README.md
 ```
@@ -74,7 +78,7 @@ long-term-memory/
 ## 进阶扩展点
 
 1. ✅ **全局 + 项目两级记忆(已内置)**:`memory_save` 支持 `scope: global`,召回自动合并两级、按分数去重。
-2. ✅ **自动捕获(已内置,保守版)**:用户「记住:xxx」时自动存为 project 记忆。进一步可在 `agent_end` 用小模型从整段对话抽取记忆(参考 lobehub memory extractor)。
+2. ✅ **自动捕获 + 自动提取(均已内置)**:「记住:xxx」即时捕获;`agent_end` 子 agent 从整段对话抽取记忆(`MEMORY_EXTRACT=1` 开启,参考 lobehub memory extractor)。
 3. **遗忘策略**:给记忆加 `lastUsedAt` / 命中计数,长期不用的降权或清理。
 4. **向量索引**:大量记忆时在 `store.ts` 接 `sqlite-vec` 做 ANN。
 

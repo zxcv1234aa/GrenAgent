@@ -15,14 +15,32 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { type EmbeddingConfig, resolveEmbeddingConfig } from "./embedding.js";
+import { extractMemories } from "./extractor.js";
 import { type MemoryHit, MemoryStore } from "./store.js";
 
 const AUTO_INJECT = (process.env.MEMORY_AUTO_INJECT ?? "1") !== "0";
 const AUTO_INJECT_TOPK = Number(process.env.MEMORY_AUTO_TOPK ?? "5") || 5;
 const AUTO_INJECT_MAX_CHARS = 4000;
 const AUTO_CAPTURE = (process.env.MEMORY_AUTO_CAPTURE ?? "1") !== "0";
+const AUTO_EXTRACT = (process.env.MEMORY_EXTRACT ?? "0") !== "0";
 
 type ScopedHit = MemoryHit & { scope: "project" | "global" };
+
+function messageToText(m: unknown): string {
+  const obj = (m ?? {}) as { role?: string; content?: unknown; message?: { role?: string; content?: unknown } };
+  const role = obj.role ?? obj.message?.role ?? "";
+  const content = obj.content ?? obj.message?.content;
+  let text = "";
+  if (typeof content === "string") {
+    text = content;
+  } else if (Array.isArray(content)) {
+    text = content
+      .filter((p): p is { type: string; text: string } => !!p && typeof p === "object" && (p as { type?: string }).type === "text")
+      .map((p) => p.text)
+      .join(" ");
+  }
+  return text ? `${role}: ${text}` : "";
+}
 
 export default function (pi: ExtensionAPI) {
   let projectStore: MemoryStore | undefined;
@@ -113,6 +131,25 @@ export default function (pi: ExtensionAPI) {
         display: true,
       },
     };
+  });
+
+  // Auto-extract: after each prompt, spawn a sub-agent to pull durable facts
+  // from the conversation and save them. Off by default (MEMORY_EXTRACT=1 to enable)
+  // since it adds an LLM call per turn.
+  pi.on("agent_end", async (event, ctx) => {
+    if (!AUTO_EXTRACT) return;
+    const messages = Array.isArray((event as { messages?: unknown[] })?.messages)
+      ? (event as { messages: unknown[] }).messages
+      : [];
+    const convo = messages.map(messageToText).filter(Boolean).join("\n").slice(0, 12000);
+    if (!convo.trim()) return;
+
+    const { project } = ensureStores(ctx.cwd);
+    const config = resolveEmbeddingConfig();
+    const facts = await extractMemories(ctx.cwd, convo).catch(() => []);
+    for (const fact of facts.slice(0, 10)) {
+      await project.save(fact, "extracted", config).catch(() => {});
+    }
   });
 
   pi.registerTool({

@@ -1,0 +1,15 @@
+{
+  "name": "pi-im-gateway",
+  "version": "0.1.0",
+  "description": "Expose the Pi coding agent over a simple HTTP webhook for IM platforms (Slack/Feishu/...).",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "im", "webhook", "bot"],
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {},
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
