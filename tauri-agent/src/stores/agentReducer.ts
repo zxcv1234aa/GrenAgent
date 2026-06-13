@@ -15,7 +15,8 @@ export type ChatMessage =
       /** 推理耗时（ms），推理结束（正文开始或消息结束）时定格，用于「已深度思考（用时 X 秒）」。 */
       thinkingDuration?: number;
     }
-  | { kind: 'tool'; id: string; toolCallId: string; toolName: string; args: unknown; result: unknown; status: 'running' | 'done' | 'error' };
+  | { kind: 'tool'; id: string; toolCallId: string; toolName: string; args: unknown; result: unknown; status: 'running' | 'done' | 'error' }
+  | { kind: 'notice'; id: string; customType: string; content: string };
 
 export interface AgentState {
   messages: ChatMessage[];
@@ -70,6 +71,20 @@ function extractText(msg: AgentMessage): { text: string; thinking: string } {
   return { text, thinking };
 }
 
+/** 把 pi 的 CustomMessage（role:'custom', display:true）转成一条去重的 notice。 */
+function applyCustomMessage(state: AgentState, msg: AgentMessage): AgentState {
+  if ((msg as { display?: unknown }).display !== true) return state;
+  const content = typeof msg.content === 'string' ? msg.content : '';
+  if (!content.trim()) return state;
+  if (state.messages.some((m) => m.kind === 'notice' && m.content === content)) return state;
+  const rawCustomType = (msg as { customType?: unknown }).customType;
+  const customType = typeof rawCustomType === 'string' ? rawCustomType : '';
+  return {
+    ...state,
+    messages: [...state.messages, { kind: 'notice', id: nextId(), customType, content }],
+  };
+}
+
 export function applyEvent(state: AgentState, event: AgentEvent): AgentState {
   switch (event.type) {
     case 'agent_start':
@@ -86,6 +101,7 @@ export function applyEvent(state: AgentState, event: AgentEvent): AgentState {
 
     case 'message_start': {
       const ev = event as Extract<AgentEvent, { type: 'message_start' }>;
+      if (ev.message.role === 'custom') return applyCustomMessage(state, ev.message);
       if (ev.message.role !== 'assistant') return state;
       const { text, thinking } = extractText(ev.message);
       const messages = [...state.messages];
@@ -123,6 +139,7 @@ export function applyEvent(state: AgentState, event: AgentEvent): AgentState {
 
     case 'message_end': {
       const ev = event as Extract<AgentEvent, { type: 'message_end' }>;
+      if (ev.message.role === 'custom') return applyCustomMessage(state, ev.message);
       if (ev.message.role !== 'assistant') return state;
       const { text, thinking } = extractText(ev.message);
       const messages = [...state.messages];
@@ -270,6 +287,15 @@ export function messagesFromAgent(
 ): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const msg of msgs) {
+    if (msg.role === 'custom') {
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      if ((msg as { display?: unknown }).display === true && content.trim()) {
+        const rawCustomType = (msg as { customType?: unknown }).customType;
+        const customType = typeof rawCustomType === 'string' ? rawCustomType : '';
+        out.push({ kind: 'notice', id: nextId(), customType, content });
+      }
+      continue;
+    }
     if (msg.role === 'user') {
       const { text } = extractText(msg);
       if (text.trim()) out.push({ kind: 'user', id: nextId(), text });
