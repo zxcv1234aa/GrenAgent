@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "../_shared/sqlite.js";
 import { type EmbeddingConfig, embedTexts } from "./embedding.js";
 
 export interface Memory {
