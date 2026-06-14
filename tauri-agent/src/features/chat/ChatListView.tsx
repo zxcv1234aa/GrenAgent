@@ -16,8 +16,6 @@ const styles = createStaticStyles(({ css }) => ({
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-width: 768px;
-    margin: 0 auto;
     padding: 16px 24px;
   `,
 }));
