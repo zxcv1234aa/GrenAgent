@@ -7,11 +7,14 @@ interface PreparingIndicatorProps {
   label?: string;
 }
 
-/** agent_start 之后、首条助手输出之前的等待占位（shimmer 文案，左对齐贴合助手消息）。 */
+/**
+ * agent_start 之后、首条助手输出之前的等待占位（shimmer 文案）。
+ * 左边缘与 ChatItemShell 助手消息对齐（paddingBlock 8、无左内边距），避免「偏右呆滞」。
+ */
 export function PreparingIndicator({ label = '准备响应中…' }: PreparingIndicatorProps) {
   const { styles } = useCardStyles();
   return (
-    <Flexbox horizontal align="center" gap={8} style={{ padding: '8px 12px' }}>
+    <Flexbox horizontal align="center" gap={8} style={{ paddingBlock: 8 }}>
       <StatusIndicator status="running" />
       <span className={styles.shinyText} style={{ fontSize: 14 }}>
         {label}
