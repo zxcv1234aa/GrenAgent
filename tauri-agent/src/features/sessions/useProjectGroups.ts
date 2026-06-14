@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { SessionInfo } from '../../lib/pi';
 import { useSessionStore } from '../../store/session';
 import { useSidebarPrefsStore } from '../../stores/sidebarPrefsStore';
+import { isUnder } from '../../lib/pathUtils';
 
 export interface ProjectGroup {
   cwd: string;
@@ -18,17 +19,19 @@ interface BuildParams {
   hiddenProjects: string[];
   aliases: Record<string, string>;
   keyword: string;
+  worksDir: string;
 }
 
 const basename = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
 
 export function buildProjectGroups(sessions: SessionInfo[], params: BuildParams): ProjectGroup[] {
-  const { current, pinnedProjects, hiddenProjects, aliases, keyword } = params;
+  const { current, pinnedProjects, hiddenProjects, aliases, keyword, worksDir } = params;
   const kw = keyword.trim().toLowerCase();
 
   const byCwd = new Map<string, SessionInfo[]>();
   for (const s of sessions) {
     if (!s.cwd) continue;
+    if (worksDir && isUnder(s.cwd, worksDir)) continue; // 排除「对话」(works 目录)
     if (!byCwd.has(s.cwd)) byCwd.set(s.cwd, []);
     byCwd.get(s.cwd)!.push(s);
   }
@@ -73,13 +76,21 @@ export function useProjectGroups(): ProjectGroup[] {
   const allSessions = useSessionStore((s) => s.allSessions);
   const current = useSessionStore((s) => s.activeWorkspace);
   const keyword = useSessionStore((s) => s.searchKeyword);
+  const worksDir = useSessionStore((s) => s.worksDir);
   const pinnedProjects = useSidebarPrefsStore((s) => s.pinnedProjects);
   const hiddenProjects = useSidebarPrefsStore((s) => s.hiddenProjects);
   const aliases = useSidebarPrefsStore((s) => s.aliases);
 
   return useMemo(
     () =>
-      buildProjectGroups(allSessions, { current, pinnedProjects, hiddenProjects, aliases, keyword }),
-    [allSessions, current, pinnedProjects, hiddenProjects, aliases, keyword],
+      buildProjectGroups(allSessions, {
+        current,
+        pinnedProjects,
+        hiddenProjects,
+        aliases,
+        keyword,
+        worksDir,
+      }),
+    [allSessions, current, pinnedProjects, hiddenProjects, aliases, keyword, worksDir],
   );
 }
