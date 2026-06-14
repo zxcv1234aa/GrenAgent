@@ -153,4 +153,18 @@ export const useCardStyles = createStyles(({ css, cssVar }) => ({
     text-overflow: ellipsis;
     white-space: nowrap;
   `,
+  queryHighlight: css`
+    padding: 0 1px;
+    color: ${cssVar.colorText};
+    /* 荧光笔式底部高亮（对齐原型：colorInfo 30% 渐变到 42% 处） */
+    background: linear-gradient(
+      to top,
+      color-mix(in srgb, ${cssVar.colorInfo} 30%, transparent) 42%,
+      transparent 42%
+    );
+  `,
+  searchCount: css`
+    margin-inline-start: 4px;
+    color: ${cssVar.colorTextTertiary};
+  `,
 }));

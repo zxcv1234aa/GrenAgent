@@ -1,5 +1,6 @@
-import { Collapse, Flexbox, Icon } from '@lobehub/ui';
-import { ChevronRight } from 'lucide-react';
+import { Block, Collapse, Flexbox, Icon } from '@lobehub/ui';
+import { cssVar } from 'antd-style';
+import { ChevronRight, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { LazyHighlighter } from './LazyHighlighter';
@@ -10,6 +11,7 @@ import {
   argSummary,
   extractText,
   getArgString,
+  getDetails,
   getDiff,
   langByPath,
   stringifyJson,
@@ -28,13 +30,61 @@ interface ToolExecutionProps {
 function ToolInspector({
   toolName,
   args,
+  result,
   status,
 }: {
   toolName: string;
   args: unknown;
+  result: unknown;
   status: ToolExecutionProps['status'];
 }) {
   const { styles } = useCardStyles();
+
+  // web_search：读作「搜索：<高亮查询词>（N）」，而非通用 toolName › 参数摘要。
+  if (toolName.toLowerCase() === 'web_search') {
+    const query = getArgString(args, 'query');
+    const details = getDetails(result);
+    const countRaw = details?.count;
+    const count =
+      typeof countRaw === 'number'
+        ? countRaw
+        : Array.isArray(details?.results)
+          ? (details!.results as unknown[]).length
+          : undefined;
+    return (
+      <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
+        {status === 'running' ? (
+          <StatusIndicator status="running" />
+        ) : (
+          <Block
+            horizontal
+            align="center"
+            justify="center"
+            variant="outlined"
+            style={{
+              flex: 'none',
+              width: 24,
+              height: 24,
+              fontSize: 12,
+              color: status === 'error' ? cssVar.colorError : cssVar.colorTextSecondary,
+            }}
+          >
+            <Icon icon={Search} size={14} />
+          </Block>
+        )}
+        <div className={styles.inspectorTitle}>
+          搜索：
+          {query ? (
+            <span className={styles.queryHighlight}>{query}</span>
+          ) : (
+            <span className={styles.toolName}>web_search</span>
+          )}
+          {count != null ? <span className={styles.searchCount}>（{count}）</span> : null}
+        </div>
+      </Flexbox>
+    );
+  }
+
   const { icon } = toolMeta(toolName);
   const summary = argSummary(args);
 
@@ -209,7 +259,7 @@ export function ToolExecution({ toolName, args, result, status }: ToolExecutionP
   if (!hasDetail && status !== 'running') {
     return (
       <Flexbox className={styles.toolRow} gap={4}>
-        <ToolInspector toolName={toolName} args={args} status={status} />
+        <ToolInspector toolName={toolName} args={args} result={result} status={status} />
       </Flexbox>
     );
   }
@@ -227,7 +277,7 @@ export function ToolExecution({ toolName, args, result, status }: ToolExecutionP
         items={[
           {
             key: 'tool',
-            label: <ToolInspector toolName={toolName} args={args} status={status} />,
+            label: <ToolInspector toolName={toolName} args={args} result={result} status={status} />,
             children: expanded ? (
               <ToolDetail toolName={toolName} args={args} result={result} status={status} />
             ) : null,
