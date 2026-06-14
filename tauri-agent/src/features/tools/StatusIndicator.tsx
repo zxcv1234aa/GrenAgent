@@ -10,7 +10,8 @@ interface StatusIndicatorProps {
 
 export function StatusIndicator({ status }: StatusIndicatorProps) {
   let icon = <Icon icon={Loader2} size={14} spin />;
-  let color: string | undefined;
+  // 中性态（running / thinking）对齐原型：text-secondary 静音色。
+  let color: string | undefined = cssVar.colorTextSecondary;
 
   switch (status) {
     case 'done':
@@ -23,7 +24,6 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
       break;
     case 'thinking':
       icon = <Icon icon={Atom} size={14} />;
-      color = cssVar.purple;
       break;
     case 'running':
     default:
