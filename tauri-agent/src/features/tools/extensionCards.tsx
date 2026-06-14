@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import type { CSSProperties, FC, ReactNode } from 'react';
 import { LazyMarkdown } from '../chat/LazyMarkdown';
+import { useCardStyles } from './cardStyles';
 import { extractText, getDetails } from './toolUtils';
 
 export interface ExtensionCardProps {
@@ -144,28 +145,33 @@ const SpawnAgentCard: FC<ExtensionCardProps> = ({ result }) => {
   );
 };
 
+// 对齐 lobe web-browsing：紧凑卡片（URL + 简短预览 + 字符数/抓取模式页脚），
+// 不把整页正文灌进对话流（全文仍在工具结果里给模型）。
 const FetchUrlCard: FC<ExtensionCardProps> = ({ result }) => {
+  const { styles } = useCardStyles();
   const d = getDetails(result);
   const url = asString(d?.url);
-  // New crawler reports which provider succeeded; fall back to legacy status code.
-  const meta = asString(d?.crawler) || (d?.status != null ? asString(d?.status) : '');
-  const text = extractText(result);
+  const crawler = asString(d?.crawler);
+  const chars = typeof d?.chars === 'number' ? (d.chars as number) : undefined;
+  const preview = extractText(result).replace(/\s+/g, ' ').trim().slice(0, 200);
+
   return (
-    <Flexbox gap={6} data-testid="card-fetch_url">
+    <div className={styles.pageCard} data-testid="card-fetch_url">
       {url ? (
-        <Flexbox horizontal align="center" gap={6}>
-          <Icon icon={Globe} size={14} />
-          <span style={{ fontSize: 12 }}>{url}</span>
-          {meta ? <span style={labelStyle}>{meta}</span> : null}
-        </Flexbox>
+        <a className={styles.pageUrl} href={url || undefined} target="_blank" rel="noreferrer">
+          <Icon icon={Globe} size={13} />
+          <span className={styles.pageUrlText}>{url}</span>
+          <Icon icon={ExternalLink} size={12} />
+        </a>
       ) : null}
-      {text ? (
-        // 限高 + 滚动：超长抓取正文不再霸屏对话流。
-        <div style={{ maxHeight: 'min(50vh, 360px)', overflowY: 'auto' }}>
-          <LazyMarkdown>{text}</LazyMarkdown>
+      {preview ? <div className={styles.pagePreview}>{preview}</div> : null}
+      {chars != null || crawler ? (
+        <div className={styles.pageFooter}>
+          {chars != null ? <span>字符数：{chars}</span> : null}
+          {crawler ? <span>抓取模式：{crawler}</span> : null}
         </div>
       ) : null}
-    </Flexbox>
+    </div>
   );
 };
 

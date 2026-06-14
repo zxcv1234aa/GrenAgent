@@ -79,6 +79,52 @@ export const useCardStyles = createStyles(({ css, cssVar }) => ({
     border: none;
     border-block-start: 1px dashed ${cssVar.colorBorder};
   `,
+  pageCard: css`
+    display: flex;
+    max-width: 420px;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid ${cssVar.colorBorderSecondary};
+    border-radius: ${cssVar.borderRadius};
+    background: ${cssVar.colorBgContainer};
+  `,
+  pageUrl: css`
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: ${cssVar.colorTextSecondary};
+    text-decoration: none;
+
+    &:hover {
+      color: ${cssVar.colorText};
+    }
+  `,
+  pageUrlText: css`
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  `,
+  pagePreview: css`
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    font-size: 12px;
+    line-height: 1.5;
+    color: ${cssVar.colorTextTertiary};
+  `,
+  pageFooter: css`
+    display: flex;
+    gap: 12px;
+    padding-block-start: 4px;
+    border-block-start: 1px solid ${cssVar.colorBorderSecondary};
+    font-size: 11px;
+    color: ${cssVar.colorTextTertiary};
+  `,
   queryHighlight: css`
     padding: 0 1px;
     color: ${cssVar.colorText};
