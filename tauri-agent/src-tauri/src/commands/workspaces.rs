@@ -1,8 +1,13 @@
+use std::sync::Arc;
+
 use serde::Serialize;
+use tauri::State;
 
 use crate::commands::sessions::{
     collect_session_files, parse_session_header, paths_equivalent, read_first_line, sessions_dir,
 };
+use crate::pi::PiManager;
+use crate::state::AppStateStore;
 
 /// works 根目录：~/.pi/agent/works（与 sessions 同源）。
 fn works_dir() -> Option<std::path::PathBuf> {
@@ -39,7 +44,6 @@ pub async fn get_works_dir() -> Result<String, String> {
 
 /// 删除 sessions/ 下所有 header.cwd 等价于 `cwd` 的 .jsonl，返回删除条数。
 /// 仅在 sessions 根内操作，跳过符号链接/非 jsonl。
-#[allow(dead_code)]
 pub(crate) fn delete_sessions_for_cwd(cwd: &str) -> Result<usize, String> {
     let sessions_root = sessions_dir().ok_or("sessions directory unavailable")?;
     let canonical_sessions = match std::fs::canonicalize(&sessions_root) {
@@ -88,6 +92,40 @@ pub(crate) fn delete_sessions_for_cwd(cwd: &str) -> Result<usize, String> {
         }
     }
     Ok(count)
+}
+
+/// FR-4：删除一个对话（works/<uuid> 整个目录 + 其会话文件 + 应用记录）。
+#[tauri::command]
+pub async fn delete_conversation(
+    workspace: String,
+    mgr: State<'_, Arc<PiManager>>,
+    store: State<'_, AppStateStore>,
+) -> Result<(), String> {
+    let works_root = works_dir().ok_or("works directory unavailable")?;
+    let canonical_works =
+        std::fs::canonicalize(&works_root).map_err(|e| format!("invalid works root: {e}"))?;
+
+    if let Ok(target) = std::fs::canonicalize(&workspace) {
+        if !target.starts_with(&canonical_works) {
+            return Err("not a conversation directory".into());
+        }
+        if std::fs::symlink_metadata(&workspace)
+            .map(|m| m.is_symlink())
+            .unwrap_or(false)
+        {
+            return Err("cannot delete symlinks".into());
+        }
+        mgr.close(&workspace).await;
+        let _ = delete_sessions_for_cwd(&workspace);
+        std::fs::remove_dir_all(&target).map_err(|e| format!("delete failed: {e}"))?;
+    } else {
+        mgr.close(&workspace).await;
+        let _ = delete_sessions_for_cwd(&workspace);
+    }
+
+    let ws = workspace.clone();
+    store.update(|st| st.forget_workspace(&ws)).await;
+    Ok(())
 }
 
 #[cfg(test)]
