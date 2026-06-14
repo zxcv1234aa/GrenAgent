@@ -20,11 +20,7 @@ const styles = createStaticStyles(({ css }) => ({
   `,
 }));
 
-interface ChatListViewProps {
-  bottomOffset?: number;
-}
-
-export function ChatListView({ bottomOffset = 88 }: ChatListViewProps) {
+export function ChatListView() {
   const { useStore } = useAgentStore();
   const messages = useStore((s) => s.messages);
   const isStreaming = useStore((s) => s.isStreaming);
@@ -65,7 +61,7 @@ export function ChatListView({ bottomOffset = 88 }: ChatListViewProps) {
       onScroll={handleScroll}
       data-testid="chat-scroll"
     >
-      <div className={styles.list} style={{ paddingBottom: bottomOffset }}>
+      <div className={styles.list}>
         <ChatMessageItems messages={display} />
         {showPreparing ? <PreparingIndicator /> : null}
       </div>

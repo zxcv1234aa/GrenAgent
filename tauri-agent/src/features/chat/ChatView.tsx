@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { ChatListView } from './ChatListView';
 import { ChatInput } from './ChatInput';
 import type { PromptImage } from './input/ChatInputContext';
@@ -7,7 +6,6 @@ import { useAgentStoreContext } from '../../stores/AgentStoreContext';
 
 export function ChatView() {
   const { workspace, store } = useAgentStoreContext();
-  const [inputHeight, setInputHeight] = useState(120);
 
   const handleSend = async (message: string, images?: PromptImage[]) => {
     const text = message.trim();
@@ -21,11 +19,13 @@ export function ChatView() {
     await pi.abort(workspace);
   };
 
+  // Flex 列：消息区 flex:1 滚动，输入框在流内置于底部（不浮动遮挡内容，对齐 lobe）。
   return (
-    <div style={{ height: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
-      {/* 输入框绝对定位在底部，列表底部留白 = 距底 16 + 输入框高度 + 缓冲 8 */}
-      <ChatListView bottomOffset={inputHeight + 24} />
-      <ChatInput onSend={handleSend} onAbort={handleAbort} onHeightChange={setInputHeight} />
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        <ChatListView />
+      </div>
+      <ChatInput onSend={handleSend} onAbort={handleAbort} />
     </div>
   );
 }

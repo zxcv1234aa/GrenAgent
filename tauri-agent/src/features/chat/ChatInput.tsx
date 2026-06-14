@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Flexbox } from '@lobehub/ui';
 import { ChatInputAreaInner } from '@lobehub/ui/chat';
-import { createStyles } from 'antd-style';
+import { createStaticStyles, cssVar } from 'antd-style';
 import { useAgentStore } from '../../stores/AgentStoreContext';
 import {
   ChatInputProvider,
@@ -17,26 +17,24 @@ import { DEFAULT_LEFT_ACTIONS, DEFAULT_RIGHT_ACTIONS, type ActionKey } from './i
 import { SlashCommandMenu } from './input/SlashCommandMenu';
 import { useSlashMenu } from './input/useSlashMenu';
 
-const useStyles = createStyles(({ token, css }) => ({
+const styles = createStaticStyles(({ css }) => ({
   surface: css`
-    position: absolute;
-    z-index: 20;
-    inset-block-end: 16px;
-    inset-inline: 16px;
+    position: relative;
+    flex: none;
 
+    margin: 8px 16px 16px;
     padding: 12px;
-    border: 1px solid ${token.colorBorderSecondary};
-    border-radius: ${token.borderRadiusLG}px;
+    border: 1px solid ${cssVar.colorBorderSecondary};
+    border-radius: ${cssVar.borderRadiusLG};
 
-    background: ${token.colorBgElevated};
-    box-shadow: ${token.boxShadowSecondary};
-    backdrop-filter: blur(8px);
+    background: ${cssVar.colorBgElevated};
+    box-shadow: ${cssVar.boxShadowSecondary};
   `,
   inputWrap: css`
-    border: 1px solid ${token.colorBorder};
-    border-radius: ${token.borderRadiusLG}px;
+    border: 1px solid ${cssVar.colorBorder};
+    border-radius: ${cssVar.borderRadiusLG};
     padding: 4px 8px;
-    background: ${token.colorBgContainer};
+    background: ${cssVar.colorBgContainer};
   `,
 }));
 
@@ -45,8 +43,6 @@ interface ChatInputProps {
   onAbort: () => Promise<void> | void;
   leftActions?: ActionKey[];
   rightActions?: ActionKey[];
-  /** 上报输入框整体高度，供消息列表预留底部空间，避免遮挡。 */
-  onHeightChange?: (height: number) => void;
 }
 
 export function ChatInput({
@@ -54,7 +50,6 @@ export function ChatInput({
   onAbort,
   leftActions = DEFAULT_LEFT_ACTIONS,
   rightActions = DEFAULT_RIGHT_ACTIONS,
-  onHeightChange,
 }: ChatInputProps) {
   const { useStore } = useAgentStore();
   const isStreaming = useStore((s) => s.isStreaming);
@@ -94,11 +89,7 @@ export function ChatInput({
 
   return (
     <ChatInputProvider value={ctx}>
-      <InputSurface
-        leftActions={leftActions}
-        rightActions={rightActions}
-        onHeightChange={onHeightChange}
-      />
+      <InputSurface leftActions={leftActions} rightActions={rightActions} />
     </ChatInputProvider>
   );
 }
@@ -106,13 +97,10 @@ export function ChatInput({
 interface InputSurfaceProps {
   leftActions: ActionKey[];
   rightActions: ActionKey[];
-  onHeightChange?: (height: number) => void;
 }
 
-function InputSurface({ leftActions, rightActions, onHeightChange }: InputSurfaceProps) {
+function InputSurface({ leftActions, rightActions }: InputSurfaceProps) {
   const { value, setValue, isStreaming, send } = useChatInput();
-  const { styles } = useStyles();
-  const rootRef = useRef<HTMLDivElement>(null);
   const {
     textareaRef,
     anchorRef,
@@ -126,18 +114,8 @@ function InputSurface({ leftActions, rightActions, onHeightChange }: InputSurfac
     slashMenuOpen,
   } = useSlashMenu(value, setValue);
 
-  useEffect(() => {
-    const el = rootRef.current;
-    if (!el || !onHeightChange) return;
-    const report = () => onHeightChange(el.offsetHeight);
-    report();
-    const observer = new ResizeObserver(report);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [onHeightChange]);
-
   return (
-    <div ref={rootRef} className={styles.surface}>
+    <div className={styles.surface}>
       <Flexbox gap={8} align="stretch">
         <AttachmentPreview />
         <div ref={anchorRef} className={styles.inputWrap}>
