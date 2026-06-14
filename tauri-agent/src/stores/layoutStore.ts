@@ -24,6 +24,7 @@ interface LayoutState {
   toggleSidebar: () => void;
   setRightPanelWidth: (width: number) => void;
   toggleRightPanel: () => void;
+  setRightPanelOpen: (open: boolean) => void;
   setTerminalHeight: (height: number) => void;
   toggleTerminal: () => void;
 }
@@ -55,6 +56,8 @@ export const useLayoutStore = create<LayoutState>()(
 
       toggleRightPanel: () =>
         set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
+
+      setRightPanelOpen: (open) => set({ rightPanelOpen: open }),
 
       setTerminalHeight: (height) =>
         set({

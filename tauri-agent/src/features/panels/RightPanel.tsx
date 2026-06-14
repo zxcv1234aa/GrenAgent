@@ -6,7 +6,9 @@ import { PanelRightClose } from 'lucide-react';
 import { PanelHeader } from '../../components/PanelHeader';
 import { useAgentStore } from '../../stores/AgentStoreContext';
 import type { ChatMessage } from '../../stores/agentReducer';
+import { useRightPanelStore } from '../../stores/rightPanelStore';
 import { SubAgentConversation } from './SubAgentConversation';
+import { PageContentViewer } from './PageContentViewer';
 import { taskLabel } from './subagentUtils';
 
 const styles = createStaticStyles(({ css }) => ({
@@ -88,6 +90,8 @@ interface RightPanelProps {
 export function RightPanel({ onCollapse }: RightPanelProps) {
   const store = useAgentStore();
   const messages = store.useStore((s) => s.messages);
+  const page = useRightPanelStore((s) => s.page);
+  const closePage = useRightPanelStore((s) => s.closePage);
   const subAgents = messages.filter(
     (m): m is ToolMessage => m.kind === 'tool' && m.toolName === 'spawn_agent',
   );
@@ -104,6 +108,15 @@ export function RightPanel({ onCollapse }: RightPanelProps) {
   const collapseAction = onCollapse ? (
     <ActionIcon icon={PanelRightClose} title="Collapse panel" onClick={onCollapse} />
   ) : undefined;
+
+  if (page) {
+    return (
+      <Flexbox className={styles.container}>
+        <PanelHeader title="联网内容" actions={collapseAction} />
+        <PageContentViewer page={page} onClose={closePage} />
+      </Flexbox>
+    );
+  }
 
   return (
     <Flexbox className={styles.container}>

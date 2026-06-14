@@ -16,6 +16,7 @@ import {
 import type { CSSProperties, FC, ReactNode } from 'react';
 import { LazyMarkdown } from '../chat/LazyMarkdown';
 import { useCardStyles } from './cardStyles';
+import { useRightPanelStore } from '../../stores/rightPanelStore';
 import { extractText, getDetails } from './toolUtils';
 
 export interface ExtensionCardProps {
@@ -149,20 +150,30 @@ const SpawnAgentCard: FC<ExtensionCardProps> = ({ result }) => {
 // 不把整页正文灌进对话流（全文仍在工具结果里给模型）。
 const FetchUrlCard: FC<ExtensionCardProps> = ({ result }) => {
   const { styles } = useCardStyles();
+  const openPage = useRightPanelStore((s) => s.openPage);
   const d = getDetails(result);
   const url = asString(d?.url);
   const crawler = asString(d?.crawler);
   const chars = typeof d?.chars === 'number' ? (d.chars as number) : undefined;
-  const preview = extractText(result).replace(/\s+/g, ' ').trim().slice(0, 200);
+  const content = extractText(result);
+  const preview = content.replace(/\s+/g, ' ').trim().slice(0, 200);
 
   return (
-    <div className={styles.pageCard} data-testid="card-fetch_url">
+    <div
+      className={styles.pageCard}
+      role="button"
+      tabIndex={0}
+      style={{ cursor: 'pointer' }}
+      data-testid="card-fetch_url"
+      // 点击卡片在右侧面板全览整页内容（对齐 lobe web-browsing）。
+      onClick={() => openPage({ url, content, title: url, chars, crawler })}
+    >
       {url ? (
-        <a className={styles.pageUrl} href={url || undefined} target="_blank" rel="noreferrer">
+        <div className={styles.pageUrl}>
           <Icon icon={Globe} size={13} />
           <span className={styles.pageUrlText}>{url}</span>
           <Icon icon={ExternalLink} size={12} />
-        </a>
+        </div>
       ) : null}
       {preview ? <div className={styles.pagePreview}>{preview}</div> : null}
       {chars != null || crawler ? (
