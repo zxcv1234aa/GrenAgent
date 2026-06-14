@@ -1,10 +1,12 @@
-import { Block, Icon } from '@lobehub/ui';
+import { ActionIcon, Block, Icon } from '@lobehub/ui';
 import { createStaticStyles, cssVar, cx } from 'antd-style';
-import { ChevronRight, Loader2, Network } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { ChevronRight, Loader2, Network, PanelRightOpen } from 'lucide-react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { useCardStyles } from '../tools/cardStyles';
 import { SubAgentConversation } from '../panels/SubAgentConversation';
 import { subAgentStepCount } from '../panels/subagentUtils';
+import { useDockStore } from '../../stores/dockStore';
+import { useLayoutStore } from '../../stores/layoutStore';
 
 const styles = createStaticStyles(({ css }) => ({
   head: css`
@@ -61,6 +63,8 @@ const styles = createStaticStyles(({ css }) => ({
 }));
 
 interface SubAgentInlineProps {
+  /** 对应主对话里 spawn_agent 工具消息的 id，也是右坞 subagent tab 的 id。 */
+  messageId: string;
   index: number;
   task: string;
   result: unknown;
@@ -70,11 +74,19 @@ interface SubAgentInlineProps {
 /**
  * 流内内联子代理：可折叠外壳（Network 状态块 + 「子代理 #N · 任务」+ chevron），
  * 展开为左侧细线缩进的嵌套子会话（复用 SubAgentConversation）。运行中自动展开 + shimmer，
- * 完成后自动收起为摘要（用户仍可手动切换）。右侧 RightPanel 深看入口保持不变。
+ * 完成后自动收起为摘要（用户仍可手动切换）。另提供「在右侧 Dock 打开」深看入口，
+ * 点击激活右坞对应 subagent tab。
  */
-export function SubAgentInline({ index, task, result, status }: SubAgentInlineProps) {
+export function SubAgentInline({ messageId, index, task, result, status }: SubAgentInlineProps) {
   const { styles: card } = useCardStyles();
   const [open, setOpen] = useState(status === 'running');
+
+  // 深看入口：激活右坞对应 subagent tab 并展开右面板（不切换内联展开态）。
+  const openInDock = (e: MouseEvent) => {
+    e.stopPropagation();
+    useDockStore.getState().setActive('right', messageId);
+    useLayoutStore.getState().setRightPanelOpen(true);
+  };
 
   useEffect(() => {
     setOpen(status === 'running');
@@ -115,6 +127,12 @@ export function SubAgentInline({ index, task, result, status }: SubAgentInlinePr
           {running ? '（运行中…）' : ''}
         </span>
         {badge ? <span className={styles.badge}>{badge}</span> : null}
+        <ActionIcon
+          icon={PanelRightOpen}
+          size="small"
+          title="在右侧面板打开"
+          onClick={openInDock}
+        />
         <span className={cx(styles.chev, open && styles.chevOpen)}>
           <Icon icon={ChevronRight} size={16} />
         </span>

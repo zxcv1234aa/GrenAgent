@@ -18,7 +18,7 @@ interface ChatMessageItemsProps {
 
 /** 共享的对话气泡渲染：主对话与子代理对话复用同一套 user/assistant/tool/notice 组件。 */
 export function ChatMessageItems({ messages }: ChatMessageItemsProps) {
-  // spawn_agent 的全局序号（与右侧 RightPanel 的 #N tab 编号一致）。
+  // spawn_agent 的全局序号（与右侧 Dock 的 #N subagent tab 编号一致）。
   const subAgentIndex = new Map<string, number>();
   let subAgentCount = 0;
   for (const msg of messages) {
@@ -49,6 +49,7 @@ export function ChatMessageItems({ messages }: ChatMessageItemsProps) {
               return (
                 <Suspense key={msg.id} fallback={null}>
                   <SubAgentInline
+                    messageId={msg.id}
                     index={subAgentIndex.get(msg.id) ?? 1}
                     task={taskLabel(msg.args)}
                     result={msg.result}
