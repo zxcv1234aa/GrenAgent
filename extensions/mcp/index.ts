@@ -15,7 +15,9 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { Type } from "typebox";
 import { type McpServerConfig, parseMcpServers, sanitize } from "./config.js";
 
-const MCP_TIMEOUT_MS = Number(process.env.MCP_TIMEOUT_MS ?? "15000") || 15000;
+// Async background loading no longer blocks startup, so we can afford a generous
+// connect timeout for slow npx cold-starts / package downloads (override via MCP_TIMEOUT_MS).
+const MCP_TIMEOUT_MS = Number(process.env.MCP_TIMEOUT_MS ?? "60000") || 60000;
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
