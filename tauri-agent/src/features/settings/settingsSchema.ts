@@ -19,6 +19,12 @@ export const SETTINGS_SCHEMA: SettingCategory[] = [
     title: '通用 / 模型',
     fields: [
       { key: 'OPENAI_API_KEY', label: 'OpenAI API Key（全局兜底）', type: 'password', placeholder: 'sk-...' },
+      {
+        key: 'titleModel',
+        label: '对话标题模型（provider/id，留空＝自动选轻量模型）',
+        type: 'text',
+        placeholder: '如 anthropic/claude-haiku',
+      },
     ],
   },
   {

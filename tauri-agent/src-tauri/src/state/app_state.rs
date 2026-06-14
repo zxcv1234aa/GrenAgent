@@ -93,7 +93,7 @@ impl AppState {
     pub fn settings_env(&self) -> HashMap<String, String> {
         self.settings
             .iter()
-            .filter(|(_, v)| !v.trim().is_empty())
+            .filter(|(k, v)| k.as_str() != "titleModel" && !v.trim().is_empty())
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     }
@@ -168,6 +168,7 @@ mod tests {
         let mut m = HashMap::new();
         m.insert("OPENAI_API_KEY".to_string(), "sk-x".to_string());
         m.insert("IMAGE_SIZE".to_string(), "  ".to_string());
+        m.insert("titleModel".to_string(), "anthropic/claude-haiku".to_string());
         st.replace_settings(m);
         st.save(&path).unwrap();
 
@@ -179,6 +180,7 @@ mod tests {
         let env = reloaded.settings_env();
         assert_eq!(env.get("OPENAI_API_KEY").map(|s| s.as_str()), Some("sk-x"));
         assert!(!env.contains_key("IMAGE_SIZE"));
+        assert!(!env.contains_key("titleModel"));
         std::fs::remove_dir_all(&dir).ok();
     }
 }
