@@ -45,7 +45,7 @@ export function PageContentViewer({ page, onClose }: { page: PageView; onClose: 
   const isJson = trimmed.startsWith('{') || trimmed.startsWith('[');
 
   return (
-    <Flexbox flex={1} gap={8} padding={12} style={{ minHeight: 0 }} data-testid="page-viewer">
+    <Flexbox flex={1} gap={8} padding={10} style={{ minHeight: 0 }} data-testid="page-viewer">
       <Flexbox horizontal align="center" gap={6}>
         <ActionIcon icon={ChevronLeft} size="small" title="返回" onClick={onClose} />
         <a className={styles.url} href={page.url} target="_blank" rel="noreferrer">
