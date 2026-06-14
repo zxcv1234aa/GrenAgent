@@ -36,3 +36,38 @@ describe('AssistantMessage thinking 渲染', { timeout: 30_000 }, () => {
     expect(screen.queryByText(/深度思考/)).toBeNull();
   });
 });
+
+describe('AssistantMessage tools 内联渲染', { timeout: 30_000 }, () => {
+  it('提供 tools 时渲染 ToolExecution 列表（按 toolName 命中）', async () => {
+    renderWithTheme(
+      <AssistantMessage
+        text="完成"
+        thinking=""
+        streaming={false}
+        tools={[
+          {
+            id: 't1',
+            toolCallId: 'tc1',
+            toolName: 'grep_search',
+            args: { q: 'foo' },
+            result: { hits: 3 },
+            status: 'done',
+          },
+        ]}
+      />,
+    );
+    await screen.findByText(/grep_search/i, undefined, { timeout: 5000 });
+  });
+
+  it('tools 为空数组时不渲染 ToolExecution', () => {
+    renderWithTheme(
+      <AssistantMessage text="hi" thinking="" streaming={false} tools={[]} />,
+    );
+    expect(screen.queryByText(/grep_search/i)).toBeNull();
+  });
+
+  it('tools 未提供时不渲染 ToolExecution', () => {
+    renderWithTheme(<AssistantMessage text="hi" thinking="" streaming={false} />);
+    expect(screen.queryByText(/grep_search/i)).toBeNull();
+  });
+});

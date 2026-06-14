@@ -1,5 +1,5 @@
 import { ChatItem } from '@lobehub/ui/chat';
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, memo } from 'react';
 import { Thinking } from './Thinking';
 
 const ToolExecution = lazy(() =>
@@ -25,14 +25,13 @@ interface AssistantMessageProps {
   tools?: AssistantToolItem[];
 }
 
-export function AssistantMessage({
+function AssistantMessageInner({
   text,
   thinking,
   streaming,
   thinkingDuration,
   tools,
 }: AssistantMessageProps) {
-  // 推理进行中：streaming 且正文尚未开始。
   const reasoning = streaming && !text;
 
   const toolsBlock =
@@ -69,3 +68,5 @@ export function AssistantMessage({
     />
   );
 }
+
+export const AssistantMessage = memo(AssistantMessageInner);
