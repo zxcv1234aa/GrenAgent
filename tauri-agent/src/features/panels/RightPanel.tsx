@@ -1,39 +1,89 @@
-import { ActionIcon, Flexbox, Icon } from '@lobehub/ui';
-import { createStaticStyles, cssVar } from 'antd-style';
-import { Network, PanelRightClose } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ActionIcon, Flexbox } from '@lobehub/ui';
+import { createStaticStyles, cssVar, cx } from 'antd-style';
+import { PanelRightClose } from 'lucide-react';
 
 import { PanelHeader } from '../../components/PanelHeader';
 import { useAgentStore } from '../../stores/AgentStoreContext';
 import type { ChatMessage } from '../../stores/agentReducer';
-import { LazyMarkdown } from '../chat/LazyMarkdown';
+import { SubAgentConversation } from './SubAgentConversation';
 
 const styles = createStaticStyles(({ css }) => ({
   container: css`
     background: ${cssVar.colorBgContainer};
     height: 100%;
   `,
-  content: css`
+  empty: css`
     flex: 1;
-    min-height: 0;
-    overflow-y: auto;
     padding: 12px;
+    font-size: 12px;
+    color: ${cssVar.colorTextTertiary};
+  `,
+  tabBar: css`
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    border-block-end: 1px solid ${cssVar.colorBorderSecondary};
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  `,
+  tab: css`
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 160px;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: ${cssVar.colorTextSecondary};
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+
+    &:hover {
+      background: ${cssVar.colorFillTertiary};
+    }
+  `,
+  tabActive: css`
+    background: ${cssVar.colorFillSecondary};
+    color: ${cssVar.colorText};
+  `,
+  tabLabel: css`
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  `,
+  dot: css`
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
   `,
 }));
 
-const muted = 'var(--gren-fg-muted, #9aa1ac)';
-const border = '1px solid var(--gren-border, rgba(255,255,255,0.08))';
-
 type ToolMessage = Extract<ChatMessage, { kind: 'tool' }>;
 
-/** 提取工具结果里的文本（spawn_agent 流式 result 的 content[].text）。 */
-function toolText(result: unknown): string {
-  if (!result || typeof result !== 'object') return '';
-  const content = (result as { content?: unknown }).content;
-  if (!Array.isArray(content)) return '';
-  return content
-    .filter((b): b is { type: string; text: string } => !!b && typeof b === 'object' && (b as { type?: string }).type === 'text')
-    .map((b) => b.text)
-    .join('');
+function taskLabel(args: unknown): string {
+  const a = (args ?? {}) as { task?: string; tasks?: string[] };
+  if (a.task?.trim()) return a.task.trim();
+  if (a.tasks?.length) return `${a.tasks.length} 个并行任务`;
+  return '子代理任务';
+}
+
+function statusColor(status: ToolMessage['status']): string {
+  if (status === 'running') return '#fbbf24';
+  if (status === 'error') return '#f87171';
+  return '#4ade80';
 }
 
 interface RightPanelProps {
@@ -44,54 +94,57 @@ interface RightPanelProps {
 export function RightPanel({ onCollapse }: RightPanelProps) {
   const store = useAgentStore();
   const messages = store.useStore((s) => s.messages);
-  const subAgents = messages.filter((m): m is ToolMessage => m.kind === 'tool' && m.toolName === 'spawn_agent');
+  const subAgents = messages.filter(
+    (m): m is ToolMessage => m.kind === 'tool' && m.toolName === 'spawn_agent',
+  );
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  // 新子代理出现时默认切到最新；当前选中被移除时回退到最后一个。
+  const latestId = subAgents.length ? subAgents[subAgents.length - 1].id : null;
+  useEffect(() => {
+    setActiveId((cur) => (cur && subAgents.some((s) => s.id === cur) ? cur : latestId));
+  }, [latestId, subAgents]);
+
+  const active = subAgents.find((s) => s.id === activeId) ?? subAgents[subAgents.length - 1];
+
+  const collapseAction = onCollapse ? (
+    <ActionIcon icon={PanelRightClose} title="Collapse panel" onClick={onCollapse} />
+  ) : undefined;
 
   return (
     <Flexbox className={styles.container}>
-      <PanelHeader
-        title="子代理"
-        actions={
-          onCollapse ? <ActionIcon icon={PanelRightClose} title="Collapse panel" onClick={onCollapse} /> : undefined
-        }
-      />
-      <Flexbox className={styles.content} data-testid="subagent-panel">
-        {subAgents.length === 0 ? (
-          <div style={{ fontSize: 12, color: muted }}>
-            暂无子代理。用 <code>spawn_agent</code> 委派任务后，这里实时显示子代理的对话。
-          </div>
-        ) : (
-          subAgents.map((sa) => {
-            const args = sa.args as { task?: string; tasks?: string[] } | null;
-            const task = args?.task ?? (args?.tasks?.length ? `${args.tasks.length} 个并行任务` : '子代理任务');
-            const text = toolText(sa.result);
-            const statusLabel = sa.status === 'running' ? '运行中' : sa.status === 'error' ? '失败' : '完成';
-            const statusColor = sa.status === 'running' ? '#fbbf24' : sa.status === 'error' ? '#f87171' : '#4ade80';
-            return (
-              <Flexbox
+      <PanelHeader title="子代理" actions={collapseAction} />
+      {subAgents.length === 0 || !active ? (
+        <div className={styles.empty} data-testid="subagent-panel">
+          暂无子代理。用 <code>spawn_agent</code> 委派任务后，这里以独立 tab 实时显示每个子代理的对话。
+        </div>
+      ) : (
+        <Flexbox flex={1} style={{ minHeight: 0 }} data-testid="subagent-panel">
+          <div className={styles.tabBar} role="tablist">
+            {subAgents.map((sa, i) => (
+              <button
                 key={sa.id}
-                gap={6}
-                data-testid={`subagent-${sa.toolCallId}`}
-                style={{ border, borderRadius: 8, padding: '10px 12px', marginBlockEnd: 8 }}
+                type="button"
+                role="tab"
+                aria-selected={sa.id === active.id}
+                data-testid={`subagent-tab-${sa.toolCallId}`}
+                className={cx(styles.tab, sa.id === active.id && styles.tabActive)}
+                onClick={() => setActiveId(sa.id)}
               >
-                <Flexbox horizontal align="center" gap={6}>
-                  <Icon icon={Network} size={14} />
-                  <span
-                    style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  >
-                    {task}
-                  </span>
-                  <span style={{ fontSize: 11, color: statusColor }}>{statusLabel}</span>
-                </Flexbox>
-                {text ? (
-                  <LazyMarkdown>{text}</LazyMarkdown>
-                ) : (
-                  <span style={{ fontSize: 11, color: muted }}>等待输出…</span>
-                )}
-              </Flexbox>
-            );
-          })
-        )}
-      </Flexbox>
+                <span className={styles.dot} style={{ background: statusColor(sa.status) }} />
+                <span className={styles.tabLabel}>{`#${i + 1} ${taskLabel(sa.args)}`}</span>
+              </button>
+            ))}
+          </div>
+          <SubAgentConversation
+            key={active.id}
+            data-testid={`subagent-${active.toolCallId}`}
+            task={taskLabel(active.args)}
+            result={active.result}
+            status={active.status}
+          />
+        </Flexbox>
+      )}
     </Flexbox>
   );
 }

@@ -18,6 +18,8 @@ import {
 
 interface ToolExecutionProps {
   toolName: string;
+  /** Optional: present when rendered from grouped messages; not needed for display. */
+  toolCallId?: string;
   args: unknown;
   result: unknown;
   status: 'running' | 'done' | 'error';

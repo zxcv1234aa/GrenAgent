@@ -318,6 +318,28 @@ export function messagesFromAgent(
   return out;
 }
 
+/**
+ * 把子代理 `--mode json` 的 JSONL 输出（每行一个 AgentEvent，首行可能是 session header）
+ * 还原成聊天消息列表 —— 复用主对话同一套 reducer，因此子代理对话能用相同气泡组件渲染。
+ * id 重写为基于下标的稳定值，避免每次重解析改变 id 导致 React 重挂载。
+ */
+export function messagesFromTranscript(transcript: string): ChatMessage[] {
+  let state = initialAgentState();
+  for (const line of transcript.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let event: AgentEvent;
+    try {
+      event = JSON.parse(trimmed) as AgentEvent;
+    } catch {
+      continue;
+    }
+    if (typeof (event as { type?: unknown }).type !== 'string') continue;
+    state = applyEvent(state, event);
+  }
+  return state.messages.map((m, i) => ({ ...m, id: `sa-${i}` }));
+}
+
 function lastIndex(arr: ChatMessage[], pred: (m: ChatMessage) => boolean): number {
   for (let i = arr.length - 1; i >= 0; i--) if (pred(arr[i])) return i;
   return -1;

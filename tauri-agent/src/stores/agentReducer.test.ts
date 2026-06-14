@@ -4,6 +4,7 @@ import {
   applyEvent,
   addUserMessage,
   messagesFromAgent,
+  messagesFromTranscript,
   type ChatMessage,
 } from './agentReducer';
 import type { AgentEvent } from '../lib/pi';
@@ -164,5 +165,34 @@ describe('custom injection messages -> notice', () => {
     ]);
     expect(out[0]).toMatchObject({ kind: 'notice', customType: 'long-term-memory', content: '# Mem' });
     expect(out[1]).toMatchObject({ kind: 'user', text: 'hi' });
+  });
+});
+
+describe('messagesFromTranscript (子代理 JSONL 还原)', () => {
+  it('parses a json-mode stream (skipping header) into assistant + tool messages with stable ids', () => {
+    const transcript = [
+      JSON.stringify({ id: 'sess', version: 1 }), // session header: no `type`, ignored
+      JSON.stringify({ type: 'agent_start' }),
+      JSON.stringify({ type: 'message_start', message: { role: 'assistant', content: [] } }),
+      JSON.stringify({
+        type: 'message_end',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'sub answer' }] },
+      }),
+      JSON.stringify({ type: 'tool_execution_start', toolCallId: 'x1', toolName: 'bash', args: { cmd: 'ls' } }),
+      JSON.stringify({ type: 'tool_execution_end', toolCallId: 'x1', toolName: 'bash', result: { ok: true }, isError: false }),
+      JSON.stringify({ type: 'agent_end' }),
+    ].join('\n');
+
+    const msgs = messagesFromTranscript(transcript);
+    const assistant = msgs.find((m) => m.kind === 'assistant');
+    const tool = msgs.find((m) => m.kind === 'tool');
+    expect(assistant && assistant.kind === 'assistant' ? assistant.text : '').toBe('sub answer');
+    expect(tool && tool.kind === 'tool' ? tool.status : '').toBe('done');
+    expect(msgs.every((m, i) => m.id === `sa-${i}`)).toBe(true);
+  });
+
+  it('ignores blank lines and malformed json', () => {
+    const transcript = ['', 'not json', JSON.stringify({ type: 'agent_start' }), '  '].join('\n');
+    expect(messagesFromTranscript(transcript)).toEqual([]);
   });
 });
