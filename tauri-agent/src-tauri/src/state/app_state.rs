@@ -70,6 +70,12 @@ impl AppState {
         self.last_sessions.get(ws).map(|s| s.as_str())
     }
 
+    /// 从 recent_workspaces + last_sessions 中彻底移除一个 workspace。
+    pub fn forget_workspace(&mut self, ws: &str) {
+        self.recent_workspaces.retain(|w| w != ws);
+        self.last_sessions.remove(ws);
+    }
+
     pub fn is_workspace_approved(&self, path: &str) -> bool {
         self.approved_workspaces.contains(path)
     }
@@ -114,6 +120,16 @@ mod tests {
             Some("/ws/a")
         );
         assert_eq!(reloaded.last_session("/ws/a"), Some("/sessions/a.jsonl"));
+    }
+
+    #[test]
+    fn forget_workspace_removes_recent_and_last_session() {
+        let mut st = AppState::default();
+        st.touch_workspace("/ws/a");
+        st.set_last_session("/ws/a", "/sessions/a.jsonl");
+        st.forget_workspace("/ws/a");
+        assert!(!st.recent_workspaces.iter().any(|w| w == "/ws/a"));
+        assert!(st.last_session("/ws/a").is_none());
     }
 
     #[test]

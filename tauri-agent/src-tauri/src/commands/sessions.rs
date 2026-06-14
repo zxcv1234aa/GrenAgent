@@ -42,11 +42,11 @@ pub fn parse_session_header(contents: &str, path: &str) -> Option<SessionInfo> {
 }
 
 /// pi 默认会话目录：~/.pi/agent/sessions
-fn sessions_dir() -> Option<std::path::PathBuf> {
+pub(crate) fn sessions_dir() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|h| h.join(".pi").join("agent").join("sessions"))
 }
 
-fn read_first_line(path: &std::path::Path) -> std::io::Result<String> {
+pub(crate) fn read_first_line(path: &std::path::Path) -> std::io::Result<String> {
     use std::io::{BufRead, BufReader};
     let file = std::fs::File::open(path)?;
     let mut reader = BufReader::new(file);
@@ -62,7 +62,7 @@ fn normalize_path_str(p: &str) -> String {
 
 /// 判断两个路径是否指向同一位置：优先用 canonicalize；失败则回退到
 /// 规范化字符串比较（Windows 下大小写不敏感）。
-fn paths_equivalent(a: &str, b: &str) -> bool {
+pub(crate) fn paths_equivalent(a: &str, b: &str) -> bool {
     if let (Ok(ca), Ok(cb)) = (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
         return ca == cb;
     }
@@ -78,7 +78,7 @@ fn paths_equivalent(a: &str, b: &str) -> bool {
 }
 
 /// pi 将会话文件放在 `~/.pi/agent/sessions/<cwd-hash>/` 子目录下。
-fn collect_session_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+pub(crate) fn collect_session_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
