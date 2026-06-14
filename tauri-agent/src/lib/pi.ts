@@ -159,6 +159,14 @@ export const pi = {
     invoke<unknown>('agent_set_session_name', { workspace, name }),
   deleteSession: (workspace: string, sessionPath: string) =>
     invoke<void>('delete_pi_session', { workspace, sessionPath }),
+  createConversation: () => invoke<{ cwd: string }>('create_conversation'),
+  getWorksDir: () => invoke<string>('get_works_dir'),
+  deleteConversation: (workspace: string) =>
+    invoke<void>('delete_conversation', { workspace }),
+  removeProject: (workspace: string) =>
+    invoke<void>('remove_project', { workspace }),
+  autoTitleSession: (workspace: string) =>
+    invoke<string | null>('auto_title_session', { workspace }),
   respondUi: (workspace: string, response: Record<string, unknown>) =>
     invoke<void>('extension_ui_respond', { workspace, response }),
   getSessionStats: (workspace: string) =>
