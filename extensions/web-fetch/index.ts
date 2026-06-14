@@ -8,7 +8,9 @@ import { Type } from "typebox";
 import { isSafeUrl } from "./html.js";
 import { getCrawler, type CrawlSuccessResult } from "../web-crawler/index.js";
 
-const MAX_CHARS = Number(process.env.FETCH_MAX_CHARS ?? "20000") || 20000;
+// 0 / unset = no truncation: return the full crawled content (the right-panel
+// viewer shows it all). Set FETCH_MAX_CHARS>0 only if you want to cap model tokens.
+const MAX_CHARS = Number(process.env.FETCH_MAX_CHARS ?? "0") || 0;
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
@@ -40,21 +42,23 @@ export default function (pi: ExtensionAPI) {
       }
 
       const page = data as CrawlSuccessResult;
-      let out = (page.title ? `# ${page.title}\n\n` : "") + (page.content ?? "");
-      let truncated = false;
-      if (out.length > MAX_CHARS) {
-        out = out.slice(0, MAX_CHARS);
-        truncated = true;
-      }
+      const full = (page.title ? `# ${page.title}\n\n` : "") + (page.content ?? "");
+      const truncated = MAX_CHARS > 0 && full.length > MAX_CHARS;
+      const out = truncated ? full.slice(0, MAX_CHARS) : full;
 
       return {
-        content: [{ type: "text", text: truncated ? `${out}\n\n[truncated to ${MAX_CHARS} chars]` : out }],
+        content: [
+          {
+            type: "text",
+            text: truncated ? `${out}\n\n[truncated to ${MAX_CHARS} chars; full content shown in panel]` : out,
+          },
+        ],
         details: {
           url: page.url,
           crawler: result.crawler,
           transformedUrl: result.transformedUrl,
           contentType: page.contentType,
-          chars: out.length,
+          chars: full.length,
           truncated,
         },
       };

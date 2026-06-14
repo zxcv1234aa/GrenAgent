@@ -41,6 +41,8 @@ type Tab = 'preview' | 'raw';
 /** 右侧整页内容查看（对齐 lobe web-browsing）：URL + 字符数/抓取模式 + 预览/原始文本。 */
 export function PageContentViewer({ page, onClose }: { page: PageView; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('preview');
+  const trimmed = page.content.trim();
+  const isJson = trimmed.startsWith('{') || trimmed.startsWith('[');
 
   return (
     <Flexbox flex={1} gap={8} padding={12} style={{ minHeight: 0 }} data-testid="page-viewer">
@@ -74,12 +76,17 @@ export function PageContentViewer({ page, onClose }: { page: PageView; onClose: 
       />
 
       <div className={styles.body}>
-        {tab === 'preview' ? (
+        {isJson ? (
+          // JSON 内容两个 Tab 都按 JSON 高亮（对齐 lobe 的整洁高亮）。
+          <LazyHighlighter language="json" copyable variant="borderless">
+            {page.content}
+          </LazyHighlighter>
+        ) : tab === 'preview' ? (
           <LazyMarkdown variant="chat" fontSize={13}>
             {page.content}
           </LazyMarkdown>
         ) : (
-          <LazyHighlighter language="plaintext" copyable variant="borderless">
+          <LazyHighlighter language="markdown" copyable variant="borderless">
             {page.content}
           </LazyHighlighter>
         )}
