@@ -19,13 +19,18 @@ export interface AgentStoreApi {
     <T>(selector: (s: AgentState) => T): T;
     getState: () => AgentState;
     setState: (partial: Partial<AgentState> | ((s: AgentState) => Partial<AgentState>)) => void;
+    subscribe: (listener: (s: AgentState, prev: AgentState) => void) => () => void;
   };
+  setActive: (active: boolean) => void;
   pushUserMessage: (text: string) => void;
   loadMessages: (msgs: AgentMessage[], options?: LoadMessagesOptions) => void;
   reset: () => void;
   hasLiveActivity: () => boolean;
   destroy: () => void;
 }
+
+/** 非 active store 的 flush 间隔（rAF 在后台被节流，用 setTimeout 兜底）。 */
+const BACKGROUND_FLUSH_MS = 60;
 
 /** 为某工作区创建 agent 状态，并订阅 pi://event。 */
 export function createAgentStore(workspace: string): AgentStoreApi {
@@ -43,6 +48,8 @@ export function createAgentStore(workspace: string): AgentStoreApi {
   // 打字机视觉由 Markdown animated 承担，不丢任何事件、保持顺序。
   let queue: AgentEvent[] = [];
   let rafId: number | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let active = true;
 
   /** 推理结束后把实时计出的时长按消息 timestamp 落盘（供切换会话后回填）。 */
   const persistThinkingDurations = (state: AgentState) => {
@@ -60,6 +67,7 @@ export function createAgentStore(workspace: string): AgentStoreApi {
 
   const flush = () => {
     rafId = null;
+    timeoutId = null;
     if (!queue.length) return;
     const events = queue;
     queue = [];
@@ -74,11 +82,11 @@ export function createAgentStore(workspace: string): AgentStoreApi {
   };
 
   const scheduleFlush = () => {
-    if (rafId != null) return;
-    if (typeof requestAnimationFrame === 'function') {
+    if (rafId != null || timeoutId != null) return;
+    if (active && typeof requestAnimationFrame === 'function') {
       rafId = requestAnimationFrame(flush);
     } else {
-      flush();
+      timeoutId = setTimeout(flush, BACKGROUND_FLUSH_MS);
     }
   };
 
@@ -88,7 +96,11 @@ export function createAgentStore(workspace: string): AgentStoreApi {
     if (rafId != null && typeof cancelAnimationFrame === 'function') {
       cancelAnimationFrame(rafId);
     }
+    if (timeoutId != null) {
+      clearTimeout(timeoutId);
+    }
     rafId = null;
+    timeoutId = null;
   };
 
   onPiEvent((env) => {
@@ -125,6 +137,9 @@ export function createAgentStore(workspace: string): AgentStoreApi {
 
   return {
     useStore,
+    setActive: (next) => {
+      active = next;
+    },
     pushUserMessage,
     loadMessages,
     reset,

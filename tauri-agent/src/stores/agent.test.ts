@@ -165,4 +165,21 @@ describe('createAgentStore', () => {
     flushRAF();
     expect(store.useStore.getState().messages).toHaveLength(0);
   });
+
+  it('非 active store 用 setTimeout 兜底 flush（rAF 不触发也能更新）', () => {
+    vi.useFakeTimers();
+    store = createAgentStore('.');
+    store.setActive(false);
+
+    emit({ type: 'agent_start' });
+    emit({ type: 'message_start', message: { role: 'assistant', content: [], timestamp: 1 } });
+
+    // 非 active：不走 rAF，flush 前不可见
+    flushRAF();
+    expect(store.useStore.getState().messages).toHaveLength(0);
+
+    // setTimeout 到点后应用
+    vi.advanceTimersByTime(80);
+    expect(store.useStore.getState().isStreaming).toBe(true);
+  });
 });
