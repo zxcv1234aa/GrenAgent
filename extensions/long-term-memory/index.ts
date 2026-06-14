@@ -14,8 +14,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { type AppliedOp, type AskFn, consolidate, extractFacts } from "./consolidate.js";
 import { type EmbeddingConfig, resolveEmbeddingConfig } from "./embedding.js";
-import { extractMemories } from "./extractor.js";
+import { askMemoryLlm, resolveMemoryModel } from "./llm.js";
 import { type MemoryHit, MemoryStore } from "./store.js";
 
 const AUTO_INJECT = (process.env.MEMORY_AUTO_INJECT ?? "1") !== "0";
@@ -23,6 +24,9 @@ const AUTO_INJECT_TOPK = Number(process.env.MEMORY_AUTO_TOPK ?? "5") || 5;
 const AUTO_INJECT_MAX_CHARS = 4000;
 const AUTO_CAPTURE = (process.env.MEMORY_AUTO_CAPTURE ?? "1") !== "0";
 const AUTO_EXTRACT = (process.env.MEMORY_EXTRACT ?? "0") !== "0";
+const SMART = (process.env.MEMORY_SMART ?? "1") !== "0";
+const SMART_NOTICE = (process.env.MEMORY_SMART_NOTICE ?? "1") !== "0";
+const MEMORY_MODEL = process.env.MEMORY_MODEL;
 
 type ScopedHit = MemoryHit & { scope: "project" | "global" };
 
@@ -90,6 +94,45 @@ export default function (pi: ExtensionAPI) {
     return merged;
   };
 
+  type AskCtx = {
+    model?: unknown;
+    modelRegistry?: { find: (p: string, m: string) => unknown };
+    signal?: AbortSignal;
+  };
+  type SaveCtx = AskCtx & { cwd: string };
+
+  // Bind an AskFn to the current agent model; undefined when no model is available.
+  const makeAsk = (ctx: AskCtx): AskFn | undefined => {
+    const model = resolveMemoryModel(
+      ctx.model as never,
+      (ctx.modelRegistry ?? { find: () => undefined }) as never,
+      MEMORY_MODEL,
+    );
+    if (!model) return undefined;
+    return (system, user) => askMemoryLlm(model, system, user, ctx.signal);
+  };
+
+  const smartSave = async (ctx: SaveCtx, text: string, scope: "project" | "global"): Promise<AppliedOp[]> => {
+    const { project, global } = ensureStores(ctx.cwd);
+    const store = scope === "global" ? global : project;
+    const config = resolveEmbeddingConfig();
+    const ask = SMART ? makeAsk(ctx) : undefined;
+    if (!ask) {
+      // MEMORY_SMART=0 or no model → naive dedup save.
+      await store.save(text.trim(), null, config, ctx.signal);
+      return [{ op: "ADD", text: text.trim() }];
+    }
+    return consolidate(store, text, { ask, config, model: MEMORY_MODEL ?? null, signal: ctx.signal });
+  };
+
+  const noticeFor = (ops: AppliedOp[]): string | undefined => {
+    const changed = ops.filter((o) => o.op === "UPDATE" || o.op === "DELETE");
+    if (!changed.length) return undefined;
+    return changed
+      .map((o) => (o.op === "UPDATE" ? `更新记忆：${o.text}` : `删除过时记忆 (${o.targetId})`))
+      .join("\n");
+  };
+
   pi.on("session_start", async (_event, ctx) => {
     ensureStores(ctx.cwd);
   });
@@ -133,9 +176,9 @@ export default function (pi: ExtensionAPI) {
     };
   });
 
-  // Auto-extract: after each prompt, spawn a sub-agent to pull durable facts
-  // from the conversation and save them. Off by default (MEMORY_EXTRACT=1 to enable)
-  // since it adds an LLM call per turn.
+  // Auto-extract: after each turn, pull durable facts from the conversation
+  // (in-process LLM, no sub-process) and consolidate them into memory.
+  // Off by default (MEMORY_EXTRACT=1 to enable) since it adds an LLM call per turn.
   pi.on("agent_end", async (event, ctx) => {
     if (!AUTO_EXTRACT) return;
     const messages = Array.isArray((event as { messages?: unknown[] })?.messages)
@@ -144,11 +187,11 @@ export default function (pi: ExtensionAPI) {
     const convo = messages.map(messageToText).filter(Boolean).join("\n").slice(0, 12000);
     if (!convo.trim()) return;
 
-    const { project } = ensureStores(ctx.cwd);
-    const config = resolveEmbeddingConfig();
-    const facts = await extractMemories(ctx.cwd, convo).catch(() => []);
+    const ask = makeAsk(ctx);
+    if (!ask) return; // no model available → skip extraction
+    const facts = await extractFacts(ask, convo).catch(() => []);
     for (const fact of facts.slice(0, 10)) {
-      await project.save(fact, "extracted", config).catch(() => {});
+      await smartSave(ctx, fact, "project").catch(() => {});
     }
   });
 
@@ -170,22 +213,19 @@ export default function (pi: ExtensionAPI) {
       scope: Type.Optional(Type.String({ description: "'project' (default) or 'global'" })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const { project, global } = ensureStores(ctx.cwd);
       const text = (params.text ?? "").trim();
       if (!text) throw new Error("memory text must be non-empty");
 
       const scope = params.scope === "global" ? "global" : "project";
-      const store = scope === "global" ? global : project;
-      const config = resolveEmbeddingConfig();
-      const { id } = await store.save(text, params.category ?? null, config, signal ?? undefined);
+      const ops = await smartSave({ ...ctx, signal: signal ?? undefined }, text, scope);
+      const summary = ops.map((o) => o.op).join(",");
+      if (SMART_NOTICE) {
+        const note = noticeFor(ops);
+        if (note) ctx.ui.notify(`🧠 ${note}`, "info");
+      }
       return {
-        content: [
-          {
-            type: "text",
-            text: `Saved ${scope} memory [${id}]${params.category ? ` (${params.category})` : ""}: ${text}`,
-          },
-        ],
-        details: { id, scope, category: params.category ?? null, embedded: config.enabled },
+        content: [{ type: "text", text: `Memory consolidated (${scope}): ${summary}` }],
+        details: { scope, ops },
       };
     },
   });
@@ -218,7 +258,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("memory", {
-    description: "Manage memory: /memory list | /memory forget <id> | /memory clear [project|global|all]",
+    description:
+      "Manage memory: /memory list | /memory add <text> | /memory forget <id> | /memory clear [project|global|all] | /memory history [id] | /memory rollback <historyId>",
     handler: async (args, ctx) => {
       const { project, global } = ensureStores(ctx.cwd);
       const parts = args.trim().split(/\s+/).filter(Boolean);
@@ -230,9 +271,8 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify("Usage: /memory add <text>", "warn");
           return;
         }
-        const config = resolveEmbeddingConfig();
-        const { id } = await project.save(text, "manual", config);
-        ctx.ui.notify(`Saved project memory [${id}]: ${text}`, "success");
+        const ops = await smartSave({ ...ctx, signal: ctx.signal ?? undefined }, text, "project");
+        ctx.ui.notify(`Saved (project): ${ops.map((o) => o.op).join(",")}`, "success");
         return;
       }
 
@@ -282,7 +322,36 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      ctx.ui.notify("Usage: /memory list | /memory forget <id> | /memory clear [project|global|all]", "warn");
+      if (sub === "history") {
+        const id = parts[1];
+        const rows = id ? project.history(id).concat(global.history(id)) : project.history(20).concat(global.history(20));
+        const lines = rows
+          .sort((a, b) => b.createdAt - a.createdAt)
+          .slice(0, 30)
+          .map(
+            (r) =>
+              `#${r.historyId} ${r.op} [${r.memoryId}] ${r.oldText ?? "∅"} → ${r.newText ?? "∅"}${r.reason ? ` (${r.reason})` : ""}`,
+          );
+        ctx.ui.notify(lines.length ? `History:\n${lines.join("\n")}` : "No history.", "info");
+        return;
+      }
+
+      if (sub === "rollback") {
+        const hid = Number(parts[1]);
+        if (!Number.isFinite(hid)) {
+          ctx.ui.notify("Usage: /memory rollback <historyId>", "warn");
+          return;
+        }
+        const config = resolveEmbeddingConfig();
+        const r = (await project.rollback(hid, config)) ?? (await global.rollback(hid, config));
+        ctx.ui.notify(r ? `Rolled back to history #${hid} (memory ${r.id}).` : `No history #${hid}.`, r ? "success" : "warn");
+        return;
+      }
+
+      ctx.ui.notify(
+        "Usage: /memory list | /memory add <text> | /memory forget <id> | /memory clear [project|global|all] | /memory history [id] | /memory rollback <historyId>",
+        "warn",
+      );
     },
   });
 }
