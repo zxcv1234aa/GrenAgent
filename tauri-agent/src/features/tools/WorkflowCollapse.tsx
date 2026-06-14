@@ -3,6 +3,7 @@ import { createStaticStyles, cssVar, cx } from 'antd-style';
 import { Suspense, lazy, useState } from 'react';
 import { StatusIndicator } from './StatusIndicator';
 import { useCardStyles } from './cardStyles';
+import { useAutoScroll } from '../../hooks/useAutoScroll';
 import type { AssistantToolItem } from '../chat/AssistantMessage';
 
 const ToolExecution = lazy(() =>
@@ -18,6 +19,11 @@ const styles = createStaticStyles(({ css }) => ({
     display: flex;
     flex-direction: column;
     gap: 2px;
+
+    /* 展开限高 + 滚动（对齐 lobe constrained）：多工具时不撑爆对话流。 */
+    max-height: min(50vh, 480px);
+    overflow-y: auto;
+    scrollbar-width: thin;
   `,
   summary: css`
     overflow: hidden;
@@ -39,6 +45,13 @@ export function WorkflowCollapse({ tools }: { tools: AssistantToolItem[] }) {
   const errored = tools.some((t) => t.status === 'error');
   const status = running ? 'running' : errored ? 'error' : 'done';
   const done = tools.filter((t) => t.status === 'done').length;
+
+  // 运行中跟随滚底（对齐 lobe constrained 的 useAutoScroll）。
+  const { ref: listRef, handleScroll } = useAutoScroll<HTMLDivElement>({
+    deps: [tools.length, done],
+    enabled: running && open,
+    threshold: 120,
+  });
 
   const title = (
     <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
@@ -65,7 +78,7 @@ export function WorkflowCollapse({ tools }: { tools: AssistantToolItem[] }) {
     >
       <AccordionItem itemKey="workflow" paddingBlock={4} paddingInline={4} title={title}>
         {open ? (
-          <div className={styles.list}>
+          <div ref={listRef} className={styles.list} onScroll={handleScroll}>
             <Suspense fallback={null}>
               {tools.map((t) => (
                 <ToolExecution
