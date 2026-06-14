@@ -6,6 +6,9 @@ import { LazyMarkdown } from './LazyMarkdown';
 const ToolExecution = lazy(() =>
   import('../tools/ToolExecution').then((m) => ({ default: m.ToolExecution })),
 );
+const WorkflowCollapse = lazy(() =>
+  import('../tools/WorkflowCollapse').then((m) => ({ default: m.WorkflowCollapse })),
+);
 
 /** Tool calls associated with an assistant turn (shape matches groupMessages' ToolDisplay). */
 export interface AssistantToolItem {
@@ -51,16 +54,17 @@ function AssistantMessageInner({
       ) : null}
       {tools && tools.length > 0 ? (
         <Suspense fallback={null}>
-          {tools.map((t) => (
+          {tools.length > 1 ? (
+            <WorkflowCollapse tools={tools} />
+          ) : (
             <ToolExecution
-              key={t.id}
-              toolName={t.toolName}
-              toolCallId={t.toolCallId}
-              args={t.args}
-              result={t.result}
-              status={t.status}
+              toolName={tools[0].toolName}
+              toolCallId={tools[0].toolCallId}
+              args={tools[0].args}
+              result={tools[0].result}
+              status={tools[0].status}
             />
-          ))}
+          )}
         </Suspense>
       ) : null}
     </ChatItemShell>
