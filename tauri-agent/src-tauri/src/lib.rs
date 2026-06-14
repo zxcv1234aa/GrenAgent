@@ -66,6 +66,8 @@ pub fn run() {
             commands::list_pi_sessions,
             commands::list_all_sessions,
             commands::delete_pi_session,
+            commands::workspaces::create_conversation,
+            commands::workspaces::get_works_dir,
             commands::extension_ui_respond,
             commands::request_workspace_approval,
             commands::is_workspace_approved,

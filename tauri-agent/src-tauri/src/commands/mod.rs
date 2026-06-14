@@ -9,6 +9,7 @@ pub mod review;
 pub mod sessions;
 pub mod shell;
 pub mod terminal;
+pub mod workspaces;
 
 pub use agent::*;
 pub use sessions::*;
