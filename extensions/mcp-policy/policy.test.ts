@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { globMatch, matchRules, parsePolicy, type Rule } from "./policy.js";
+import { globMatch, matchDanger, matchRules, parsePolicy, summarize, type Rule } from "./policy.js";
 
 describe("parsePolicy", () => {
   it("returns defaults for empty / invalid json", () => {
@@ -69,5 +69,26 @@ describe("matchRules", () => {
   });
   it("non-string arg value does not match", () => {
     expect(matchRules([{ match: { n: "1" }, policy: "required" }], { n: 1 })).toBeUndefined();
+  });
+});
+
+describe("matchDanger", () => {
+  it("flags rm -rf, sudo, system paths and secrets", () => {
+    expect(matchDanger({ command: "rm -rf /" })).toBe(true);
+    expect(matchDanger({ command: "sudo reboot" })).toBe(true);
+    expect(matchDanger({ path: "/etc/shadow" })).toBe(true);
+    expect(matchDanger({ file: "/home/u/.ssh/id_rsa" })).toBe(true);
+  });
+  it("ignores benign args", () => {
+    expect(matchDanger({ query: "hello world" })).toBe(false);
+  });
+});
+
+describe("summarize", () => {
+  it("truncates long args with an ellipsis", () => {
+    expect(summarize({ a: "x".repeat(600) }).endsWith("…")).toBe(true);
+  });
+  it("returns compact json for short args", () => {
+    expect(summarize({ a: "short" })).toBe('{"a":"short"}');
   });
 });

@@ -101,3 +101,30 @@ export function matchRules(rules: Rule[] | undefined, args: Record<string, unkno
   }
   return undefined;
 }
+
+// Best-effort danger heuristics: scan the json blob of all args for risky shell
+// fragments / system paths / secrets. Intentionally conservative; precise control
+// is the user's per-tool rules.
+const DANGEROUS = [
+  /\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r|--recursive)/i,
+  /\bsudo\b/i,
+  /\bmkfs\b/i,
+  /\bdd\s+if=/i,
+  /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;/,
+  />\s*\/dev\/sd[a-z]/i,
+  /\bchmod\b[^\n]*-R[^\n]*\b777\b/i,
+  /(^|[\\/"])\/(etc|sys|proc)\//i,
+  /[\\/]\.ssh[\\/]/i,
+  /\.(pem|key)\b/i,
+  /(^|[\\/"])\.env(\.|"|$)/i,
+];
+
+export function matchDanger(args: Record<string, unknown>): boolean {
+  const blob = JSON.stringify(args ?? {});
+  return DANGEROUS.some((re) => re.test(blob));
+}
+
+export function summarize(args: Record<string, unknown>, max = 500): string {
+  const s = JSON.stringify(args ?? {});
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+}
