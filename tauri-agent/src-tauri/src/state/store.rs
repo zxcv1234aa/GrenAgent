@@ -10,14 +10,20 @@ use crate::state::AppState;
 pub struct AppStateStore {
     inner: Arc<Mutex<AppState>>,
     path: PathBuf,
+    runtime_path: PathBuf,
 }
 
 impl AppStateStore {
     pub fn new(path: PathBuf) -> Self {
         let state = AppState::load(&path);
+        let runtime_path = path
+            .parent()
+            .map(|p| p.join("runtime-settings.json"))
+            .unwrap_or_else(|| PathBuf::from("runtime-settings.json"));
         Self {
             inner: Arc::new(Mutex::new(state)),
             path,
+            runtime_path,
         }
     }
 
@@ -55,5 +61,28 @@ impl AppStateStore {
     /// 整体替换设置并持久化。
     pub async fn replace_settings(&self, settings: std::collections::HashMap<String, String>) {
         self.update(|st| st.replace_settings(settings)).await;
+    }
+
+    /// 运行时配置文件路径（注入 sidecar 供扩展 fs.watch 热更新）。
+    pub fn runtime_path(&self) -> PathBuf {
+        self.runtime_path.clone()
+    }
+
+    /// 把当前 settings_env 原子写到运行时配置文件，供扩展热更新读取。
+    pub async fn write_runtime_config(&self) {
+        let env = self.settings_env().await;
+        let path = self.runtime_path.clone();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match serde_json::to_string_pretty(&env) {
+            Ok(json) => {
+                let tmp = path.with_extension("json.tmp");
+                if std::fs::write(&tmp, json).is_ok() {
+                    let _ = std::fs::rename(&tmp, &path);
+                }
+            }
+            Err(e) => eprintln!("[runtime-config] serialize failed: {e}"),
+        }
     }
 }

@@ -50,6 +50,7 @@ pub fn spawn_pi_client(
     cwd: &str,
     sink: Arc<dyn crate::pi::sink::EventSink>,
     env: std::collections::HashMap<String, String>,
+    runtime_config: &str,
 ) -> Result<Arc<PiClient>> {
     let package_dir = pi_package_dir();
     let (mut rx, child) = app
@@ -58,6 +59,7 @@ pub fn spawn_pi_client(
         .map_err(|e| anyhow!("sidecar lookup failed: {e}"))?
         .args(["--mode", "rpc"])
         .env("PI_PACKAGE_DIR", &package_dir)
+        .env("PI_RUNTIME_CONFIG", runtime_config)
         .envs(env)
         .current_dir(cwd)
         .spawn()

@@ -70,9 +70,11 @@ pub async fn open_workspace(
     let app2 = app.clone();
     let ws = workspace.clone();
     let env = store.settings_env().await;
+    store.write_runtime_config().await;
+    let runtime_config = store.runtime_path().to_string_lossy().to_string();
     mgr.get_or_open(&workspace, move || {
         let sink: Arc<dyn EventSink> = Arc::new(TauriSink { app: app2.clone() });
-        spawn_pi_client(&app2, ws.clone(), &cwd_for_spawn, sink, env.clone())
+        spawn_pi_client(&app2, ws.clone(), &cwd_for_spawn, sink, env.clone(), &runtime_config)
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -402,5 +404,6 @@ pub async fn set_settings(
     store: State<'_, AppStateStore>,
 ) -> Result<(), String> {
     store.replace_settings(settings).await;
+    store.write_runtime_config().await;
     Ok(())
 }
