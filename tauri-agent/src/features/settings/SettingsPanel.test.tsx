@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { getSettings, setSettings, closeWorkspace, openWorkspace } = vi.hoisted(() => ({
-  getSettings: vi.fn(() => Promise.resolve({ OPENAI_API_KEY: 'sk-old' })),
+  getSettings: vi.fn(() => Promise.resolve({ OPENAI_API_KEY: 'sk-old', titleModel: 'haiku' })),
   setSettings: vi.fn(() => Promise.resolve()),
   closeWorkspace: vi.fn(() => Promise.resolve()),
   openWorkspace: vi.fn(() => Promise.resolve({})),
@@ -21,22 +21,46 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('SettingsPanel', () => {
-  it('renders categories and prefills loaded values', async () => {
-    render(<SettingsPanel />);
-    await waitFor(() => expect(screen.getByTestId('set-cat-general')).toBeTruthy());
-    expect(screen.getByTestId('set-cat-knowledge')).toBeTruthy();
-    const input = screen.getByTestId('set-field-OPENAI_API_KEY') as HTMLInputElement;
-    expect(input.value).toBe('sk-old');
-  });
+// 渲染整面板含大量 antd 控件，jsdom 下偏慢，单测放宽超时。
+const T = 30000;
 
-  it('edits a field and saves', async () => {
-    render(<SettingsPanel />);
-    await waitFor(() => expect(screen.getByTestId('set-field-OPENAI_API_KEY')).toBeTruthy());
-    fireEvent.change(screen.getByTestId('set-field-OPENAI_API_KEY'), { target: { value: 'sk-new' } });
-    fireEvent.click(screen.getByTestId('set-save'));
-    await waitFor(() =>
-      expect(setSettings).toHaveBeenCalledWith(expect.objectContaining({ OPENAI_API_KEY: 'sk-new' })),
-    );
-  });
+describe('SettingsPanel', () => {
+  it(
+    'renders grouped nav and prefills loaded values',
+    async () => {
+      render(<SettingsPanel />);
+      await waitFor(() => expect(screen.getByTestId('set-cat-general')).toBeTruthy());
+      expect(screen.getByTestId('set-cat-knowledge')).toBeTruthy();
+      expect(screen.getByTestId('set-cat-memory')).toBeTruthy();
+      expect(screen.getByText('能力')).toBeTruthy();
+      const input = screen.getByTestId('set-field-titleModel') as HTMLInputElement;
+      expect(input.value).toBe('haiku');
+    },
+    T,
+  );
+
+  it(
+    'switches category and shows section cards',
+    async () => {
+      render(<SettingsPanel />);
+      await waitFor(() => expect(screen.getByTestId('set-cat-memory')).toBeTruthy());
+      fireEvent.click(screen.getByTestId('set-cat-memory'));
+      await waitFor(() => expect(screen.getByTestId('set-card-记忆召回')).toBeTruthy());
+      expect(screen.getByTestId('set-card-记忆维护')).toBeTruthy();
+      expect(screen.getByTestId('set-field-MEMORY_AUTO_INJECT')).toBeTruthy();
+    },
+    T,
+  );
+
+  it(
+    'edits a field and saves',
+    async () => {
+      render(<SettingsPanel />);
+      await waitFor(() => expect(screen.getByTestId('set-field-titleModel')).toBeTruthy());
+      fireEvent.change(screen.getByTestId('set-field-titleModel'), { target: { value: 'gpt-x' } });
+      fireEvent.click(screen.getByTestId('set-save'));
+      await waitFor(() => expect(setSettings).toHaveBeenCalledWith(expect.objectContaining({ titleModel: 'gpt-x' })));
+    },
+    T,
+  );
 });
