@@ -1,17 +1,19 @@
-import { useCallback, useMemo, useState, memo } from 'react';
+import { useCallback, useState, memo } from 'react';
 import { ActionIcon, Empty, Flexbox, Text } from '@lobehub/ui';
 import { Dropdown } from 'antd';
 import { createStaticStyles, cssVar } from 'antd-style';
 import { FolderPlus, MessageSquarePlus, PanelLeftClose } from 'lucide-react';
 import { openPath } from '@tauri-apps/plugin-opener';
+import { VList } from 'virtua';
 import { PanelHeader } from '../../components/PanelHeader';
 import { useSessionStore } from '../../store/session';
 import { useSidebarPrefsStore } from '../../stores/sidebarPrefsStore';
-import { useProjectGroups, type ProjectGroup as Group } from './useProjectGroups';
 import { useConversations } from './useConversations';
 import { SidebarActions } from './SidebarActions';
-import { ProjectGroup } from './ProjectGroup';
-import { SessionItem } from './SessionItem';
+import { ConversationRow } from './ConversationRow';
+import { GroupSessionRow } from './GroupSessionRow';
+import { ProjectHeaderRow } from './ProjectHeaderRow';
+import { useSidebarItems, type SidebarItem } from './useSidebarItems';
 
 const styles = createStaticStyles(({ css }) => ({
   sec: css`
@@ -33,11 +35,23 @@ const styles = createStaticStyles(({ css }) => ({
     letter-spacing: 0.09em;
     text-transform: uppercase;
   `,
-  scroll: css`
-    overflow-y: auto;
+  more: css`
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0 6px;
+    padding: 2px 10px 4px 28px;
+    color: ${cssVar.colorTextTertiary};
+    font-size: 12px;
+    cursor: pointer;
+
+    &:hover {
+      color: ${cssVar.colorText};
+    }
+  `,
+  listWrap: css`
     flex: 1;
     min-height: 0;
-    contain: strict;
   `,
 }));
 
@@ -54,101 +68,22 @@ export interface SidebarProps {
   onToggleSidebar: () => void;
 }
 
-interface GroupListProps {
-  groups: Group[];
-  runningSessionPaths: Set<string>;
-  activeSessionPath: string | null;
-  renamingPath: string | null;
-  onNewSession: (cwd: string) => void;
-  onOpenSession: (cwd: string, path: string) => void;
-  onDeleteSession: (cwd: string, path: string) => void;
-  onRemoveProject: (cwd: string) => void;
-  onSubmitRename: (cwd: string, path: string, name: string) => void;
-  onRequestRename: (path: string) => void;
-}
+export const Sidebar = memo(function Sidebar(props: SidebarProps) {
+  const conversations = useConversations();
+  const activeSessionPath = useSessionStore((s) => s.activeSessionPath);
+  const isLoading = useSessionStore((s) => s.isLoading);
+  const allSessionsLoading = useSessionStore((s) => s.allSessionsLoading);
 
-const GroupList = memo(function GroupList({
-  groups,
-  runningSessionPaths,
-  activeSessionPath,
-  renamingPath,
-  onNewSession,
-  onOpenSession,
-  onDeleteSession,
-  onRemoveProject,
-  onSubmitRename,
-  onRequestRename,
-}: GroupListProps) {
-  const collapsed = useSidebarPrefsStore((s) => s.collapsed);
-  const pinnedSessions = useSidebarPrefsStore((s) => s.pinnedSessions);
   const toggleCollapsed = useSidebarPrefsStore((s) => s.toggleCollapsed);
   const togglePinnedProject = useSidebarPrefsStore((s) => s.togglePinnedProject);
   const togglePinnedSession = useSidebarPrefsStore((s) => s.togglePinnedSession);
   const hideProject = useSidebarPrefsStore((s) => s.hideProject);
   const setAlias = useSidebarPrefsStore((s) => s.setAlias);
 
-  const isCollapsed = useCallback(
-    (cwd: string, defaultCollapsed: boolean) => {
-      const value = collapsed[cwd];
-      return value === undefined ? defaultCollapsed : value;
-    },
-    [collapsed],
-  );
-
-  const isSessionPinned = useCallback(
-    (path: string) => pinnedSessions.includes(path),
-    [pinnedSessions],
-  );
-
-  return (
-    <>
-      {groups.map((g) => (
-        <ProjectGroup
-          key={g.cwd}
-          group={g}
-          expanded={!isCollapsed(g.cwd, !g.isCurrent)}
-          activeSessionPath={activeSessionPath}
-          runningSessionPaths={runningSessionPaths}
-          renamingPath={renamingPath}
-          onToggleExpand={() => toggleCollapsed(g.cwd, !g.isCurrent)}
-          onNewInProject={onNewSession}
-          onPinProject={togglePinnedProject}
-          onRevealProject={(cwd) => void openPath(cwd)}
-          onRenameProject={(cwd) => {
-            const next = window.prompt('项目别名（留空恢复默认）', g.name);
-            if (next !== null) setAlias(cwd, next);
-          }}
-          onHideProject={hideProject}
-          onRemoveProject={onRemoveProject}
-          onOpenSession={onOpenSession}
-          onPinSession={togglePinnedSession}
-          onRequestRename={onRequestRename}
-          onSubmitRename={(path, name) => onSubmitRename(g.cwd, path, name)}
-          onDeleteSession={onDeleteSession}
-          isSessionPinned={isSessionPinned}
-        />
-      ))}
-    </>
-  );
-});
-
-export const Sidebar = memo(function Sidebar(props: SidebarProps) {
-  const groups = useProjectGroups();
-  const conversations = useConversations();
-  const activeSessionPath = useSessionStore((s) => s.activeSessionPath);
-  const isLoading = useSessionStore((s) => s.isLoading);
-  const allSessionsLoading = useSessionStore((s) => s.allSessionsLoading);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [showAllCwds, setShowAllCwds] = useState<Set<string>>(new Set());
 
-  const { pinnedGroups, normalGroups } = useMemo(() => {
-    const pinned: Group[] = [];
-    const normal: Group[] = [];
-    for (const g of groups) {
-      if (g.pinned) pinned.push(g);
-      else normal.push(g);
-    }
-    return { pinnedGroups: pinned, normalGroups: normal };
-  }, [groups]);
+  const items = useSidebarItems(showAllCwds);
 
   const handleSubmitRename = useCallback(
     (cwd: string, path: string, name: string) => {
@@ -157,23 +92,22 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     },
     [props.onSubmitRename],
   );
-
-  const handleRequestRename = useCallback((path: string) => {
-    setRenamingPath(path);
+  const handleRequestRename = useCallback((path: string) => setRenamingPath(path), []);
+  const handleRevealProject = useCallback((cwd: string) => void openPath(cwd), []);
+  const handleRenameProject = useCallback(
+    (group: { cwd: string; name: string }) => {
+      const next = window.prompt('项目别名（留空恢复默认）', group.name);
+      if (next !== null) setAlias(group.cwd, next);
+    },
+    [setAlias],
+  );
+  const handleShowAll = useCallback((cwd: string) => {
+    setShowAllCwds((prev) => {
+      const next = new Set(prev);
+      next.add(cwd);
+      return next;
+    });
   }, []);
-
-  const listProps: GroupListProps = {
-    runningSessionPaths: props.runningSessionPaths,
-    activeSessionPath,
-    renamingPath,
-    onNewSession: props.onNewSession,
-    onOpenSession: props.onOpenSession,
-    onDeleteSession: props.onDeleteSession,
-    onRemoveProject: props.onRemoveProject,
-    onSubmitRename: handleSubmitRename,
-    onRequestRename: handleRequestRename,
-    groups: [],
-  };
 
   const newProjectMenu = {
     items: [
@@ -183,10 +117,108 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     onClick: () => props.onOpenProject(),
   };
 
-  const showLoading =
-    (isLoading || allSessionsLoading) && groups.length === 0 && conversations.length === 0;
-  const showEmpty =
-    !isLoading && !allSessionsLoading && groups.length === 0 && conversations.length === 0;
+  const renderItem = useCallback(
+    (item: SidebarItem) => {
+      switch (item.type) {
+        case 'section':
+          return (
+            <div className={styles.secRow}>
+              <span className={styles.secLabel}>{item.label}</span>
+              {item.action === 'new-conversation' ? (
+                <ActionIcon
+                  icon={MessageSquarePlus}
+                  size="small"
+                  title="新建对话 (Ctrl+Alt+N)"
+                  onClick={props.onNewConversation}
+                />
+              ) : (
+                <Dropdown menu={newProjectMenu} trigger={['click']}>
+                  <span>
+                    <ActionIcon icon={FolderPlus} size="small" title="新建项目" />
+                  </span>
+                </Dropdown>
+              )}
+            </div>
+          );
+        case 'conversation':
+          return (
+            <ConversationRow
+              item={item.item}
+              active={activeSessionPath === item.item.sessionPath}
+              running={props.runningSessionPaths.has(item.item.sessionPath)}
+              editing={renamingPath === item.item.sessionPath}
+              onOpen={props.onOpenSession}
+              onDelete={props.onDeleteConversation}
+              onSubmitRename={handleSubmitRename}
+              onRequestRename={handleRequestRename}
+            />
+          );
+        case 'pinned-label':
+          return <div className={styles.sec}>置顶</div>;
+        case 'project':
+          return (
+            <ProjectHeaderRow
+              group={item.group}
+              expanded={item.expanded}
+              onToggleExpand={toggleCollapsed}
+              onNewInProject={props.onNewSession}
+              onPinProject={togglePinnedProject}
+              onRevealProject={handleRevealProject}
+              onRenameProject={handleRenameProject}
+              onHideProject={hideProject}
+              onRemoveProject={props.onRemoveProject}
+            />
+          );
+        case 'session':
+          return (
+            <GroupSessionRow
+              cwd={item.cwd}
+              session={item.session}
+              active={activeSessionPath === item.session.path}
+              running={props.runningSessionPaths.has(item.session.path)}
+              pinned={item.pinned}
+              editing={renamingPath === item.session.path}
+              onOpen={props.onOpenSession}
+              onDelete={props.onDeleteSession}
+              onSubmitRename={handleSubmitRename}
+              onRequestRename={handleRequestRename}
+              onPinToggle={togglePinnedSession}
+            />
+          );
+        case 'more':
+          return (
+            <div className={styles.more} onClick={() => handleShowAll(item.cwd)}>
+              查看全部 {item.total} 条
+            </div>
+          );
+        default:
+          return null;
+      }
+    },
+    [
+      activeSessionPath,
+      renamingPath,
+      props.runningSessionPaths,
+      props.onNewConversation,
+      props.onOpenSession,
+      props.onDeleteConversation,
+      props.onNewSession,
+      props.onRemoveProject,
+      props.onDeleteSession,
+      handleSubmitRename,
+      handleRequestRename,
+      toggleCollapsed,
+      togglePinnedProject,
+      togglePinnedSession,
+      hideProject,
+      handleRevealProject,
+      handleRenameProject,
+      handleShowAll,
+    ],
+  );
+
+  const showLoading = (isLoading || allSessionsLoading) && conversations.length === 0 && items.length <= 2;
+  const showEmpty = !isLoading && !allSessionsLoading && conversations.length === 0 && items.length <= 2;
 
   return (
     <Flexbox height="100%" style={{ minHeight: 0, background: 'var(--gren-sidebar-bg, transparent)' }}>
@@ -195,52 +227,20 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
         actions={<ActionIcon icon={PanelLeftClose} size="small" title="收起" onClick={props.onToggleSidebar} />}
       />
       <SidebarActions />
-      <div className={styles.scroll}>
-        {showLoading && (
+      <div className={styles.listWrap}>
+        {showLoading ? (
           <Flexbox align="center" justify="center" style={{ padding: 24 }}>
             <Text type="secondary" style={{ fontSize: 12 }}>
               加载会话…
             </Text>
           </Flexbox>
+        ) : showEmpty ? (
+          <Empty description="暂无对话或项目" />
+        ) : (
+          <VList data={items} style={{ height: '100%' }}>
+            {(item: SidebarItem) => <div key={item.key}>{renderItem(item)}</div>}
+          </VList>
         )}
-        {showEmpty && <Empty description="暂无对话或项目" />}
-
-        <div className={styles.secRow}>
-          <span className={styles.secLabel}>对话</span>
-          <ActionIcon
-            icon={MessageSquarePlus}
-            size="small"
-            title="新建对话 (Ctrl+Alt+N)"
-            onClick={props.onNewConversation}
-          />
-        </div>
-        {conversations.map((c) => (
-          <SessionItem
-            key={c.cwd}
-            title={c.name}
-            active={activeSessionPath === c.sessionPath}
-            running={props.runningSessionPaths.has(c.sessionPath)}
-            pinned={false}
-            editing={renamingPath === c.sessionPath}
-            onClick={() => props.onOpenSession(c.cwd, c.sessionPath)}
-            onPinToggle={() => {}}
-            onRequestRename={() => setRenamingPath(c.sessionPath)}
-            onRename={(name) => handleSubmitRename(c.cwd, c.sessionPath, name)}
-            onDelete={() => props.onDeleteConversation(c.cwd)}
-          />
-        ))}
-
-        <div className={styles.secRow}>
-          <span className={styles.secLabel}>项目</span>
-          <Dropdown menu={newProjectMenu} trigger={['click']}>
-            <span>
-              <ActionIcon icon={FolderPlus} size="small" title="新建项目" />
-            </span>
-          </Dropdown>
-        </div>
-        {pinnedGroups.length > 0 && <div className={styles.sec}>置顶</div>}
-        <GroupList {...listProps} groups={pinnedGroups} />
-        <GroupList {...listProps} groups={normalGroups} />
       </div>
     </Flexbox>
   );
