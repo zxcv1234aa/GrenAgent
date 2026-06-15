@@ -5,6 +5,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { spawnPiAgent } from "./runner.js";
 import { normalizeTasks } from "./tasks.js";
+import { resolveProfile, profileToModel, profileToEnv, type ProfileInput } from "./capability.js";
+import { getConfig } from "../_shared/runtime-config.js";
 
 const MAX_CONCURRENCY = 4;
 
@@ -31,15 +33,53 @@ export default function (pi: ExtensionAPI) {
           { description: "Multiple tasks in parallel; each item may be a string or { task, model }." },
         ),
       ),
+      profile: Type.Optional(
+        Type.Union(
+          [
+            Type.String({ description: "Preset profile: explore | planner | executor | reviewer | default" }),
+            Type.Object(
+              {
+                extends: Type.Optional(Type.String()),
+                fs: Type.Optional(
+                  Type.Union([
+                    Type.Literal("readonly"),
+                    Type.Literal("workspace"),
+                    Type.Object({ writeAllow: Type.Array(Type.String()) }),
+                  ]),
+                ),
+                net: Type.Optional(Type.Boolean()),
+                mcp: Type.Optional(Type.Union([Type.Boolean(), Type.Array(Type.String())])),
+                spawn: Type.Optional(Type.Boolean()),
+                isolation: Type.Optional(
+                  Type.Union([Type.Literal("process"), Type.Literal("worktree"), Type.Literal("sandbox")]),
+                ),
+                model: Type.Optional(Type.String()),
+              },
+              { additionalProperties: false },
+            ),
+          ],
+          { description: "Capability profile: preset name or inline object. Composable, additive/subtractive." },
+        ),
+      ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const list = normalizeTasks(params);
       if (!list.length) throw new Error("provide `task` or `tasks`");
 
+      const profile = resolveProfile(params.profile as ProfileInput | undefined);
+      if (profile.isolation && profile.isolation !== "process") {
+        throw new Error(
+          `isolation '${profile.isolation}' 尚未支持（worktree 规划于 P2、sandbox 于 P4）；当前仅支持 process`,
+        );
+      }
+      const profileModel = profileToModel(profile, getConfig);
+      const profileEnv = params.profile ? profileToEnv(profile) : {};
+
       if (list.length === 1) {
         const { task, model } = list[0];
         const r = await spawnPiAgent(ctx.cwd, task, {
-          model,
+          model: model ?? profileModel,
+          env: profileEnv,
           signal: signal ?? undefined,
           onUpdate: onUpdate
             ? (u) =>
@@ -60,7 +100,13 @@ export default function (pi: ExtensionAPI) {
       for (let i = 0; i < list.length; i += MAX_CONCURRENCY) {
         const batch = list.slice(i, i + MAX_CONCURRENCY);
         const settled = await Promise.all(
-          batch.map((t) => spawnPiAgent(ctx.cwd, t.task, { model: t.model, signal: signal ?? undefined })),
+          batch.map((t) =>
+            spawnPiAgent(ctx.cwd, t.task, {
+              model: t.model ?? profileModel,
+              env: profileEnv,
+              signal: signal ?? undefined,
+            }),
+          ),
         );
         settled.forEach((r, j) => results.push({ task: batch[j].task, ok: r.ok, output: r.output, error: r.error }));
       }
