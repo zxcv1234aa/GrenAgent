@@ -1,10 +1,26 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryStore } from "./store.js";
 
+// 确定性 embedding：3 维，按字符码分桶累加；同义近文本向量相近。
+vi.mock("./embedding.js", async (orig) => {
+  const actual = await orig<typeof import("./embedding.js")>();
+  return {
+    ...actual,
+    embedTexts: vi.fn(async (texts: string[]) =>
+      texts.map((t) => {
+        const v = [0, 0, 0];
+        for (let i = 0; i < t.length; i++) v[i % 3] += t.charCodeAt(i);
+        return v;
+      }),
+    ),
+  };
+});
+
 const OFF = { enabled: false, baseUrl: "", apiKey: "", model: "" };
+const ON = { enabled: true, baseUrl: "x", apiKey: "x", model: "x" };
 const dirs: string[] = [];
 const opened: MemoryStore[] = [];
 function track<T extends MemoryStore>(s: T): T {
@@ -90,5 +106,46 @@ describe("MemoryStore smart ops", () => {
     reopened.load();
     const first = reopened.list(1)[0];
     expect(reopened.getById(first.id)?.text).toBe("legacy ok");
+  });
+});
+
+describe("recall filters + vector cache", () => {
+  it("filters by category via SQL before scoring (keyword path)", async () => {
+    const s = newStore();
+    await s.insert("topic alpha", "preference", OFF, "t");
+    await s.insert("topic beta", "fact", OFF, "t");
+    // query 同时匹配两条；仅 category 过滤能把 fact 排除。
+    const hits = await s.recall("topic", 5, OFF, undefined, { categories: ["preference"] });
+    expect(hits.map((h) => h.memory.text)).toEqual(["topic alpha"]);
+  });
+
+  it("filters by createdAt range", async () => {
+    const s = newStore();
+    await s.insert("old fact", null, OFF, "t");
+    await new Promise((r) => setTimeout(r, 2));
+    const b = await s.insert("new fact", null, OFF, "t");
+    const from = s.getById(b.id)!.createdAt;
+    const hits = await s.recall("fact", 5, OFF, undefined, { from });
+    expect(hits.map((h) => h.memory.text)).toEqual(["new fact"]);
+  });
+
+  it("vector recall uses cache and ranks by similarity", async () => {
+    const s = newStore();
+    await s.insert("alpha alpha alpha", null, ON, "t");
+    await s.insert("zzzzzz", null, ON, "t");
+    const hits = await s.recall("alpha alpha alpha", 2, ON);
+    expect(hits[0].memory.text).toBe("alpha alpha alpha");
+    expect(hits[0].score).toBeGreaterThan(0);
+  });
+
+  it("cache stays consistent after update/remove", async () => {
+    const s = newStore();
+    const { id } = await s.insert("alpha", null, ON, "t");
+    await s.recall("alpha", 1, ON);
+    await s.update(id, { text: "beta beta" }, ON, "u");
+    const hits = await s.recall("beta beta", 1, ON);
+    expect(hits[0].memory.text).toBe("beta beta");
+    s.remove(id, "x");
+    expect(await s.recall("beta beta", 1, ON)).toHaveLength(0);
   });
 });

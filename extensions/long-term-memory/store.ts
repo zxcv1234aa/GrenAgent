@@ -7,7 +7,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "../_shared/sqlite.js";
 import { type EmbeddingConfig, embedTexts } from "./embedding.js";
-import { vecNorm } from "./ranking.js";
+import { dot, vecNorm } from "./ranking.js";
 
 export interface Memory {
   id: string;
@@ -20,6 +20,12 @@ export interface Memory {
 export interface MemoryHit {
   memory: Memory;
   score: number;
+}
+
+export interface RecallFilters {
+  categories?: string[];
+  /** createdAt 下界(ms, 含) */ from?: number;
+  /** createdAt 上界(ms, 含) */ to?: number;
 }
 
 export type HistoryOp = "ADD" | "UPDATE" | "DELETE" | "ROLLBACK";
@@ -36,19 +42,6 @@ export interface HistoryRow {
   model: string | null;
   version: number;
   createdAt: number;
-}
-
-function cosine(a: number[], b: number[]): number {
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  const len = Math.min(a.length, b.length);
-  for (let i = 0; i < len; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  return na && nb ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0;
 }
 
 function keywordScore(query: string, text: string): number {
@@ -455,34 +448,52 @@ export class MemoryStore {
     topK: number,
     config: EmbeddingConfig,
     signal?: AbortSignal,
+    filters?: RecallFilters,
   ): Promise<MemoryHit[]> {
-    const rows = this.database
-      .prepare("SELECT id, text, category, createdAt, embedding FROM memories")
-      .all() as unknown as MemoryRow[];
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (filters?.categories?.length) {
+      where.push(`category IN (${filters.categories.map(() => "?").join(",")})`);
+      params.push(...filters.categories);
+    }
+    if (filters?.from != null) {
+      where.push("createdAt >= ?");
+      params.push(filters.from);
+    }
+    if (filters?.to != null) {
+      where.push("createdAt <= ?");
+      params.push(filters.to);
+    }
+    const sql =
+      "SELECT id, text, category, createdAt, embedding FROM memories" +
+      (where.length ? ` WHERE ${where.join(" AND ")}` : "");
+    const rows = this.database.prepare(sql).all(...params) as unknown as MemoryRow[];
     if (!rows.length) return [];
 
-    const memories: Memory[] = rows.map((r) => ({
+    const toMemory = (r: MemoryRow): Memory => ({
       id: r.id,
       text: r.text,
       category: r.category,
       createdAt: r.createdAt,
       embedding: decodeEmbedding(r.embedding),
-    }));
+    });
 
-    const canUseVectors = config.enabled && memories.some((m) => m.embedding);
+    const canUseVectors = config.enabled && rows.some((r) => r.embedding);
     let scored: MemoryHit[];
 
     if (canUseVectors) {
+      const cache = this.ensureVecCache();
       const [q] = await embedTexts([query], config, signal);
-      scored = memories.map((memory) => ({
-        memory,
-        score: memory.embedding ? cosine(q, memory.embedding) : 0,
-      }));
+      const qv = Float32Array.from(q);
+      const qnorm = vecNorm(qv);
+      scored = rows.map((r) => {
+        const c = cache.get(r.id);
+        const denom = qnorm * (c?.norm ?? 0);
+        const sim = c && denom ? dot(qv, c.vec) / denom : 0;
+        return { memory: toMemory(r), score: sim };
+      });
     } else {
-      scored = memories.map((memory) => ({
-        memory,
-        score: keywordScore(query, memory.text),
-      }));
+      scored = rows.map((r) => ({ memory: toMemory(r), score: keywordScore(query, r.text) }));
     }
 
     return scored
