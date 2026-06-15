@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PRESETS, resolveProfile, profileToModel, profileToEnv } from "./capability.js";
+import { PRESETS, resolveProfile, profileToModel, profileToEnv, profileLimits } from "./capability.js";
 
 describe("resolveProfile", () => {
   it("undefined → default preset", () => {
@@ -85,5 +85,24 @@ describe("profileToEnv", () => {
     expect(profileToEnv({ net: false, tools: { deny: ["bash"] } }).SAFETY_DENY_TOOLS).toBe(
       "web_search,web_fetch,web_crawler,bash",
     );
+  });
+});
+
+describe("profileLimits", () => {
+  it("extracts positive timeoutMs and maxConcurrency", () => {
+    expect(profileLimits({ limits: { timeoutMs: 5000, maxConcurrency: 2 } })).toEqual({
+      timeoutMs: 5000,
+      maxConcurrency: 2,
+    });
+  });
+  it("drops non-positive or missing values", () => {
+    expect(profileLimits({ limits: { timeoutMs: 0, maxConcurrency: 0 } })).toEqual({});
+    expect(profileLimits({})).toEqual({});
+  });
+  it("floors fractional values", () => {
+    expect(profileLimits({ limits: { timeoutMs: 1500.7, maxConcurrency: 3.9 } })).toEqual({
+      timeoutMs: 1500,
+      maxConcurrency: 3,
+    });
   });
 });

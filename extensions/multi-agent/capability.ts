@@ -99,3 +99,13 @@ export function profileToEnv(p: CapabilityProfile): Record<string, string> {
   if (deny.length) env.SAFETY_DENY_TOOLS = deny.join(",");
   return env;
 }
+
+/** Extract sanitized resource quotas (positive integers only) from a profile. */
+export function profileLimits(p: CapabilityProfile): { timeoutMs?: number; maxConcurrency?: number } {
+  const t = p.limits?.timeoutMs;
+  const c = p.limits?.maxConcurrency;
+  return {
+    ...(typeof t === "number" && t > 0 ? { timeoutMs: Math.floor(t) } : {}),
+    ...(typeof c === "number" && c >= 1 ? { maxConcurrency: Math.floor(c) } : {}),
+  };
+}

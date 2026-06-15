@@ -72,7 +72,7 @@ export function extractFinalText(jsonlOutput: string): string {
 export async function spawnPiAgent(
   cwd: string,
   task: string,
-  opts: { model?: string; signal?: AbortSignal; onUpdate?: (update: AgentUpdate) => void; env?: Record<string, string> } = {},
+  opts: { model?: string; signal?: AbortSignal; onUpdate?: (update: AgentUpdate) => void; env?: Record<string, string>; timeoutMs?: number } = {},
 ): Promise<AgentResult> {
   const { cmd, baseArgs } = resolvePiCommand();
   const args = [...baseArgs, "--mode", "json", "-p", "--no-session"];
@@ -110,10 +110,11 @@ export async function spawnPiAgent(
     let stdout = "";
     let stderr = "";
 
+    const tmo = opts.timeoutMs ?? timeoutMs();
     const timer = setTimeout(() => {
       child.kill();
-      finish({ ok: false, output: extractFinalText(stdout), exitCode: -1, error: `timeout after ${timeoutMs()}ms`, transcript: stdout });
-    }, timeoutMs());
+      finish({ ok: false, output: extractFinalText(stdout), exitCode: -1, error: `timeout after ${tmo}ms`, transcript: stdout });
+    }, tmo);
 
     child.stdout?.on("data", (d: Buffer) => {
       stdout += d.toString();

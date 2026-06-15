@@ -5,7 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { spawnPiAgent } from "./runner.js";
 import { normalizeTasks } from "./tasks.js";
-import { resolveProfile, profileToModel, profileToEnv, type ProfileInput } from "./capability.js";
+import { resolveProfile, profileToModel, profileToEnv, profileLimits, type ProfileInput } from "./capability.js";
 import { createWorktree, worktreeDiff } from "./worktree.js";
 import { SubAgentRegistry, type SubAgentRow } from "./registry.js";
 import { getConfig } from "../_shared/runtime-config.js";
@@ -157,6 +157,7 @@ export default function (pi: ExtensionAPI) {
       }
       const profileModel = profileToModel(profile, getConfig);
       const profileEnv = params.profile ? profileToEnv(profile) : {};
+      const limits = profileLimits(profile);
 
       if (action === "spawn") {
         if (list.length !== 1) throw new Error("background spawn 仅支持单任务");
@@ -174,7 +175,7 @@ export default function (pi: ExtensionAPI) {
         inflight.set(id, controller);
         // Detached: keeps running after this tool call returns; the handler writes
         // the terminal state to the registry, which `wait`/`status` then read.
-        void spawnPiAgent(ctx.cwd, task, { model: chosenModel, env: profileEnv, signal: controller.signal })
+        void spawnPiAgent(ctx.cwd, task, { model: chosenModel, env: profileEnv, timeoutMs: limits.timeoutMs, signal: controller.signal })
           .then((r) =>
             registry.finish(
               id,
@@ -214,6 +215,7 @@ export default function (pi: ExtensionAPI) {
           const r = await spawnPiAgent(runCwd, task, {
             model: model ?? profileModel,
             env: profileEnv,
+            timeoutMs: limits.timeoutMs,
             signal: signal ?? undefined,
             onUpdate: onUpdate
               ? (u) =>
@@ -238,13 +240,15 @@ export default function (pi: ExtensionAPI) {
       }
 
       const results: Array<{ task: string; ok: boolean; output: string; error?: string }> = [];
-      for (let i = 0; i < list.length; i += MAX_CONCURRENCY) {
-        const batch = list.slice(i, i + MAX_CONCURRENCY);
+      const concurrency = Math.max(1, limits.maxConcurrency ?? MAX_CONCURRENCY);
+      for (let i = 0; i < list.length; i += concurrency) {
+        const batch = list.slice(i, i + concurrency);
         const settled = await Promise.all(
           batch.map((t) =>
             spawnPiAgent(ctx.cwd, t.task, {
               model: t.model ?? profileModel,
               env: profileEnv,
+              timeoutMs: limits.timeoutMs,
               signal: signal ?? undefined,
             }),
           ),
