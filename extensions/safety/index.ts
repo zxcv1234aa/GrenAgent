@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ProjectTrustEventResult } from "@earendil-works/pi-coding-agent";
-import { extractPath, isDangerousBash, matchProtectedPath } from "./rules.js";
+import { extractPath, isDangerousBash, isMutatingBash, matchProtectedPath, matchWriteAllowed } from "./rules.js";
 import { getConfig } from "../_shared/runtime-config.js";
 
 const off = (v: string | undefined) => v === "0" || v?.toLowerCase() === "false";
@@ -8,6 +8,35 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     const guardBash = !off(getConfig("SAFETY_BASH_CONFIRM"));
     const guardPaths = !off(getConfig("SAFETY_PROTECT_PATHS"));
+
+    // Capability-profile gating. Prefer per-subagent injected process.env over the
+    // global runtime config so a sub-agent's tightening cannot be loosened by (or
+    // leak into) the main agent.
+    const on = (v: string | undefined) => v === "1" || v?.toLowerCase() === "true";
+    const readonly = on(process.env.SAFETY_READONLY ?? getConfig("SAFETY_READONLY"));
+    const writeAllow = (process.env.SAFETY_WRITE_ALLOW ?? getConfig("SAFETY_WRITE_ALLOW") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const denyTools = (process.env.SAFETY_DENY_TOOLS ?? getConfig("SAFETY_DENY_TOOLS") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (denyTools.includes(event.toolName)) {
+      return { block: true, reason: `能力档案禁用工具：${event.toolName}` };
+    }
+    if (readonly) {
+      if (event.toolName === "write" || event.toolName === "edit") {
+        const p = extractPath((event.input ?? {}) as Record<string, unknown>);
+        if (!p || !matchWriteAllowed(p, writeAllow)) {
+          return { block: true, reason: `只读模式：仅允许写 ${writeAllow.join(", ") || "(无)"}` };
+        }
+      }
+      if (event.toolName === "bash" && isMutatingBash(String(event.input?.command ?? ""))) {
+        return { block: true, reason: "只读模式：禁止会改动文件系统的命令" };
+      }
+    }
     if (guardBash && event.toolName === "bash") {
       const command = String(event.input?.command ?? "");
       if (isDangerousBash(command)) {
