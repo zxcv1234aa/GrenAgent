@@ -9,6 +9,7 @@ import imageGen from "./image-gen/index.js";
 import knowledgeRag from "./knowledge-rag/index.js";
 import longTermMemory from "./long-term-memory/index.js";
 import mcp from "./mcp/index.js";
+import mcpPolicy from "./mcp-policy/index.js";
 import multiAgent from "./multi-agent/index.js";
 import planMode from "./plan-mode/index.js";
 import safety from "./safety/index.js";
@@ -27,6 +28,7 @@ export {
   webFetch,
   webSearch,
   mcp,
+  mcpPolicy,
   imageGen,
   codeReview,
   multiAgent,
@@ -45,6 +47,7 @@ export const allExtensions = [
   webFetch,
   webSearch,
   mcp,
+  mcpPolicy,
   imageGen,
   codeReview,
   multiAgent,
