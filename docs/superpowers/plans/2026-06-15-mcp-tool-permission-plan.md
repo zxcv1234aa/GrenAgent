@@ -155,8 +155,8 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
-function asPermission(v: unknown, fallback: Permission): Permission {
-  return PERMISSIONS.includes(v as Permission) ? (v as Permission) : fallback;
+function isPermission(v: unknown): v is Permission {
+  return PERMISSIONS.includes(v as Permission);
 }
 
 export function parsePolicy(json: string): Policy {
@@ -171,7 +171,7 @@ export function parsePolicy(json: string): Policy {
   for (const [name, entryRaw] of Object.entries(asRecord(root.tools))) {
     const entry = asRecord(entryRaw);
     const out: ToolEntry = {};
-    if (entry.permission !== undefined) out.permission = asPermission(entry.permission, "auto");
+    if (isPermission(entry.permission)) out.permission = entry.permission;
     if (Array.isArray(entry.rules)) {
       const rules: Rule[] = [];
       for (const r of entry.rules) {
@@ -196,7 +196,7 @@ export function parsePolicy(json: string): Policy {
   const auditRaw = asRecord(root.audit);
   return {
     version: typeof root.version === "number" ? root.version : 1,
-    defaultPermission: asPermission(root.defaultPermission, "auto"),
+    defaultPermission: isPermission(root.defaultPermission) ? root.defaultPermission : "auto",
     tools,
     audit: { enabled: auditRaw.enabled !== false },
   };
