@@ -5,6 +5,7 @@ export interface McpServerStatus {
   transport: string;
   status: 'connecting' | 'connected' | 'failed';
   tools: number;
+  toolNames?: string[];
 }
 
 interface McpStatusState {

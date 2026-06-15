@@ -13,7 +13,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Type } from "typebox";
-import { type McpServerConfig, parseMcpServers, sanitize } from "./config.js";
+import { injectDefaultServers, type McpServerConfig, parseMcpServers, sanitize } from "./config.js";
 
 // Async background loading no longer blocks startup, so we can afford a generous
 // connect timeout for slow npx cold-starts / package downloads (override via MCP_TIMEOUT_MS).
@@ -49,11 +49,15 @@ async function connect(s: McpServerConfig): Promise<Client> {
 type McpStatus = "connecting" | "connected" | "failed";
 
 export default function (pi: ExtensionAPI) {
-  const servers = parseMcpServers(process.env.MCP_SERVERS ?? "");
+  const servers = injectDefaultServers(
+    parseMcpServers(process.env.MCP_SERVERS ?? ""),
+    process.env,
+    process.platform,
+  );
   if (servers.length === 0) return;
 
   const clients: Client[] = [];
-  const registry = new Map<string, { status: McpStatus; tools: number; error?: string }>();
+  const registry = new Map<string, { status: McpStatus; tools: number; error?: string; toolNames?: string[] }>();
   for (const s of servers) registry.set(s.name, { status: "connecting", tools: 0 });
 
   // Bound to the latest session_start ctx.ui so background connects can push live status.
@@ -64,6 +68,7 @@ export default function (pi: ExtensionAPI) {
       transport: s.transport,
       status: registry.get(s.name)?.status ?? "failed",
       tools: registry.get(s.name)?.tools ?? 0,
+      toolNames: registry.get(s.name)?.toolNames ?? [],
     }));
 
   const connectServer = async (s: McpServerConfig): Promise<void> => {
@@ -105,7 +110,7 @@ export default function (pi: ExtensionAPI) {
           // Active-tool plumbing not ready yet; tools stay registered and become callable later.
         }
       }
-      registry.set(s.name, { status: "connected", tools: tools.length });
+      registry.set(s.name, { status: "connected", tools: tools.length, toolNames: newNames });
       console.error(`[mcp] connected "${s.name}" (${s.transport}); ${tools.length} tools registered`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

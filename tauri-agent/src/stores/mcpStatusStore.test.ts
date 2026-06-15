@@ -11,4 +11,11 @@ describe('mcpStatusStore', () => {
     useMcpStatusStore.getState().setServers([]);
     expect(useMcpStatusStore.getState().servers).toEqual([]);
   });
+
+  it('carries toolNames when provided', () => {
+    useMcpStatusStore.getState().setServers([
+      { name: 'fs', transport: 'stdio', status: 'connected', tools: 2, toolNames: ['mcp__fs__read', 'mcp__fs__write'] },
+    ]);
+    expect(useMcpStatusStore.getState().servers[0].toolNames).toEqual(['mcp__fs__read', 'mcp__fs__write']);
+  });
 });
