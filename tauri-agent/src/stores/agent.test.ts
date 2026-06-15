@@ -158,6 +158,36 @@ describe('createAgentStore', () => {
     expect(restored?.kind === 'assistant' ? restored.thinkingDuration : undefined).toBe(2300);
   });
 
+  it('getLoadedSessionPath 记录载入会话，reset 后回到未载入态', () => {
+    store = createAgentStore('.');
+    // 从未载入：undefined（与「载入了空会话 null」区分，供切回时判断是否需完整加载）
+    expect(store.getLoadedSessionPath()).toBeUndefined();
+
+    store.loadMessages([{ role: 'assistant', content: [{ type: 'text', text: 'hi' }] }], {
+      force: true,
+      sessionPath: '/s/a.jsonl',
+    });
+    expect(store.getLoadedSessionPath()).toBe('/s/a.jsonl');
+
+    // 未带 sessionPath 的载入不改写已记录的会话路径
+    store.loadMessages([], { force: true });
+    expect(store.getLoadedSessionPath()).toBe('/s/a.jsonl');
+
+    store.reset();
+    expect(store.getLoadedSessionPath()).toBeUndefined();
+  });
+
+  it('实时流式中（live + 未带 sessionPath）loadMessages 不被跳过仅在 force 时覆盖', () => {
+    store = createAgentStore('.');
+    store.pushUserMessage('hi');
+    // live 态下普通 loadMessages 被忽略，loadedSessionPath 不应被设置
+    store.loadMessages([{ role: 'assistant', content: [{ type: 'text', text: 'x' }] }], {
+      sessionPath: '/s/should-not-apply.jsonl',
+    });
+    expect(store.getLoadedSessionPath()).toBeUndefined();
+    expect(store.useStore.getState().messages[0].kind).toBe('user');
+  });
+
   it('reset 丢弃尚未应用的排队事件', () => {
     store = createAgentStore('.');
     emit({ type: 'message_start', message: { role: 'assistant', content: [], timestamp: 1 } });

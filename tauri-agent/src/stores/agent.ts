@@ -11,6 +11,8 @@ import { getThinkingDuration, saveThinkingDuration } from '../lib/thinkingDurati
 
 export interface LoadMessagesOptions {
   force?: boolean;
+  /** 本次载入对应的会话路径：记录后供切回时判断「内存内容是否已是目标会话」从而跳过重载。 */
+  sessionPath?: string | null;
 }
 
 export interface AgentStoreApi {
@@ -26,6 +28,12 @@ export interface AgentStoreApi {
   loadMessages: (msgs: AgentMessage[], options?: LoadMessagesOptions) => void;
   reset: () => void;
   hasLiveActivity: () => boolean;
+  /**
+   * 当前内存内容对应的会话路径：
+   * - `undefined`：从未载入过（需完整加载）
+   * - `string | null`：已载入过该会话（切回时若与目标一致即可复用缓存、跳过重载）
+   */
+  getLoadedSessionPath: () => string | null | undefined;
   destroy: () => void;
 }
 
@@ -35,6 +43,8 @@ const BACKGROUND_FLUSH_MS = 60;
 /** 为某工作区创建 agent 状态，并订阅 pi://event。 */
 export function createAgentStore(workspace: string): AgentStoreApi {
   let liveActivity = false;
+  // 内存内消息当前对应的会话路径（undefined = 从未载入）。用于切回工作区时判断是否可复用缓存。
+  let loadedSessionPath: string | null | undefined = undefined;
   const unsubs: Array<() => void> = [];
 
   const useStore = create<AgentState>(() => initialAgentState());
@@ -122,6 +132,9 @@ export function createAgentStore(workspace: string): AgentStoreApi {
   const loadMessages = (msgs: AgentMessage[], options?: LoadMessagesOptions) => {
     if (liveActivity && !options?.force) return;
     liveActivity = false;
+    if (options && 'sessionPath' in options) {
+      loadedSessionPath = options.sessionPath ?? null;
+    }
     clearQueue();
     setFullState({
       ...initialAgentState(),
@@ -131,6 +144,8 @@ export function createAgentStore(workspace: string): AgentStoreApi {
 
   const reset = () => {
     liveActivity = false;
+    // 新会话尚无落盘路径：标记为未载入，切回时按完整加载处理（届时会话已有路径）。
+    loadedSessionPath = undefined;
     clearQueue();
     setFullState(initialAgentState());
   };
@@ -144,6 +159,7 @@ export function createAgentStore(workspace: string): AgentStoreApi {
     loadMessages,
     reset,
     hasLiveActivity: () => liveActivity,
+    getLoadedSessionPath: () => loadedSessionPath,
     destroy: () => {
       clearQueue();
       for (const un of unsubs) un();

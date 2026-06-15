@@ -198,6 +198,28 @@ function Workspace() {
   // 首屏先渲染 UI 骨架；openWorkspace 完成后并行加载会话与消息，全量会话后台刷新。
   useEffect(() => {
     let alive = true;
+
+    // 缓存命中：该 store 已常驻、且内存内容正是目标会话（或正处于本会话的实时流式中）→
+    // 直接复用，跳过 openWorkspace/getMessages/loadMessages 重载。既消除「每次打开都重新加载」，
+    // 也不会冲掉后台仍在流式的会话。切走工作区时其 pi 进程从不关闭、活跃会话也未被切换，故切回即正确，
+    // 无需任何后端调用（再调 openWorkspace 反而会把进程 restore 到 last_session、顶掉在跑的新会话）。
+    if (workspace) {
+      const target = useSessionStore.getState().activeSessionPath;
+      const loaded = store.getLoadedSessionPath();
+      const cached =
+        (loaded !== undefined && loaded === target) || (store.hasLiveActivity() && !target);
+      if (cached) {
+        setWorkspaceReady(true);
+        useSessionStore.getState().setLoading(false);
+        if (target) useSessionStore.getState().setWorkspaceSessionPath(workspace, target);
+        // 全量会话仍后台刷新（带 30s 缓存，不阻塞、不重载消息区）。
+        void refreshAllSessions();
+        return () => {
+          alive = false;
+        };
+      }
+    }
+
     const perf = createStartupPerf(workspace);
     // 兜底：openWorkspace 异常或挂起时，最多 12s 后强制结束加载，避免永久停在加载页。
     const readyGuard = setTimeout(() => {
@@ -239,7 +261,7 @@ function Workspace() {
         perf.start('getMessages');
         try {
           const { messages } = await pi.getMessages(workspace);
-          if (alive) store.loadMessages(messages, { force: true });
+          if (alive) store.loadMessages(messages, { force: true, sessionPath: path });
         } catch {
           /* 无消息或加载失败，保持空 */
         }
@@ -295,7 +317,7 @@ function Workspace() {
       } else {
         await pi.switchSession(cwd, path);
         const { messages } = await pi.getMessages(cwd);
-        store.loadMessages(messages, { force: true });
+        store.loadMessages(messages, { force: true, sessionPath: path });
       }
     },
     [store, switchProject],
