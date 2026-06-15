@@ -3,10 +3,9 @@ import { Switch } from 'antd';
 import { createStaticStyles, cssVar } from 'antd-style';
 import { Boxes, Plus, RotateCw, ScrollText, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { readMcpPolicy, writeMcpPolicy } from '../../lib/mcpPolicyIo';
+import { probeMcpServer, readMcpPolicy, readMcpToolsCache, writeMcpPolicy } from '../../lib/mcpPolicyIo';
 import { pi } from '../../lib/pi';
 import { useAgentStoreContext } from '../../stores/AgentStoreContext';
-import { useMcpStatusStore } from '../../stores/mcpStatusStore';
 import type { PiCommand } from '../chat/input/commandTypes';
 import { parseCommands } from '../chat/input/commandUtils';
 import { useSettingsForm } from '../settings/useSettingsForm';
@@ -24,6 +23,7 @@ import {
   type McpEntry,
 } from './mcpConfig';
 import { parsePolicyDoc, serializePolicyDoc, setToolPerm, setToolRules, type Perm } from './mcpPolicy';
+import { getCacheEntry, getCachedTools, parseToolsCache, toProbeConfigJson, type CacheEntry } from './mcpToolsCache';
 import { ToolPermissionModal } from './ToolPermissionModal';
 
 const mono = 'ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -262,9 +262,6 @@ const styles = createStaticStyles(({ css }) => ({
 export function ExtensionsPanel() {
   const { values, setValue, persist, save, saving, loading, error } = useSettingsForm();
   const { workspace } = useAgentStoreContext();
-  const liveMcp = useMcpStatusStore((s) => s.servers);
-  const liveMcpByName = new Map(liveMcp.map((s) => [s.name, s]));
-
   const cols: Collections = {
     enabled: values.MCP_SERVERS ?? '',
     disabled: values.MCP_SERVERS_DISABLED ?? '',
@@ -299,6 +296,60 @@ export function ExtensionsPanel() {
     void writeMcpPolicy(serializePolicyDoc(next)).catch(() => {});
   };
   const onPermChange = (fullName: string, perm: Perm) => writePolicy(setToolPerm(policyRaw, fullName, perm));
+
+  const [toolsCache, setToolsCache] = useState<Record<string, CacheEntry>>({});
+  const [probing, setProbing] = useState<Set<string>>(new Set());
+
+  const reloadCache = async () => {
+    try {
+      setToolsCache(parseToolsCache(await readMcpToolsCache()));
+    } catch {
+      // ignore: empty cache renders as 未探测
+    }
+  };
+
+  const probeOne = async (serverName: string, serverConfig: McpConfig) => {
+    setProbing((s) => new Set(s).add(serverName));
+    try {
+      await probeMcpServer(toProbeConfigJson(serverName, serverConfig));
+    } catch {
+      // probe failure is recorded in cache by the subcommand; ignore here
+    } finally {
+      await reloadCache();
+      setProbing((s) => {
+        const next = new Set(s);
+        next.delete(serverName);
+        return next;
+      });
+    }
+  };
+
+  // 打开面板：读缓存，并对「已启用但还没缓存过」的 server 自动探测一次（顺序执行，避免一次 spawn 一堆 npx）。
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      let cache: Record<string, CacheEntry> = {};
+      try {
+        cache = parseToolsCache(await readMcpToolsCache());
+      } catch {
+        cache = {};
+      }
+      if (cancelled) return;
+      setToolsCache(cache);
+      const toProbe = listEntries({
+        enabled: values.MCP_SERVERS ?? '',
+        disabled: values.MCP_SERVERS_DISABLED ?? '',
+      }).filter((e) => e.enabled && !cache[e.name]);
+      for (const e of toProbe) {
+        if (cancelled) return;
+        await probeOne(e.name, e.config);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -435,7 +486,7 @@ export function ExtensionsPanel() {
                 </Flexbox>
               </div>
               <div className={styles.heroDesc}>
-                连接外部 MCP server，其工具以 <code className={styles.code}>mcp__server__tool</code> 暴露给 agent（改动自动保存，重启后生效）。
+                连接外部 MCP server，其工具以 <code className={styles.code}>mcp__server__tool</code> 暴露给 agent。点「测试连接」获取工具并配置权限（即时生效）。
               </div>
 
               {entries.length === 0 ? (
@@ -450,7 +501,9 @@ export function ExtensionsPanel() {
                     name={e.name}
                     config={e.config}
                     enabled={e.enabled}
-                    live={liveMcpByName.get(e.name)}
+                    cachedTools={getCachedTools(toolsCache, e.name)}
+                    probing={probing.has(e.name)}
+                    probeError={getCacheEntry(toolsCache, e.name)?.ok === false ? getCacheEntry(toolsCache, e.name)?.error : undefined}
                     policyRaw={policyRaw}
                     onToggle={(v) => handleToggleMcp(e.name, v)}
                     onEdit={() => {
@@ -458,6 +511,7 @@ export function ExtensionsPanel() {
                       setModalOpen(true);
                     }}
                     onDelete={() => handleDeleteMcp(e.name)}
+                    onProbe={() => void probeOne(e.name, e.config)}
                     onPermChange={onPermChange}
                     onOpenRules={(full) => setRulesTarget(full)}
                   />
