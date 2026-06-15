@@ -323,4 +323,38 @@ status ∈ pending | running | done | error | cancelled
 - [x] 落地约束（仅 extensions、子进程、向后兼容）贯穿
 - [x] 与现状基线、improve-adapters 对齐，无重复实现
 - [x] 路线图每阶段独立可用、可验证
-- [ ] 待用户确认阶段切分与 P0 起步范围后，转 `writing-plans` 产出实现计划
+- [x] 已转 `writing-plans` 产出 P0 计划并内联执行
+
+---
+
+## 14. 实现状态（2026-06-15，feat/terminal-tabs）
+
+| 阶段 | 状态 | 关键 commit |
+|------|------|-------------|
+| P0 能力档案（含 P1 只读，已并入） | ✅ 已实现 | capability.ts / safety 拦截 / spawn_agent profile / GUI 别名 |
+| P2 worktree 隔离 + diff | ✅ 已实现 | worktree.ts / executor 预设 / 隔离执行 |
+| P3 注册表 + 后台 run/spawn/status/wait/cancel + 孤儿恢复 | ✅ 已实现 | registry.ts / index.ts 控制面 |
+| P4-lite 资源配额（limits.timeoutMs / maxConcurrency） | ✅ 已实现 | capability profileLimits / runner timeoutMs / index 并发 |
+| P4 OS 沙箱（seatbelt/bwrap） | ⏸ 推迟 | mac/linux 专属；Windows 上等于退回现状，按 ROI 暂缓，留作 mac/linux 可选 |
+| 远程硬隔离（CubeSandbox / E2B 协议后端） | ✂ 排除 | 威胁模型为「自己代码/自己机器/防 LLM 犯错」，硬件 MicroVM 过度；未来若要云子代理层，按 **E2B 协议**接入（厂商中立，勿硬绑 CubeSandbox） |
+
+验证：扩展单测全绿、lint 清、集成构建（`build:sidecar`）成功产出二进制。
+
+## 15. P5（未来选项）：embedded 进程内后端
+
+Pi 的 sidecar 本身已是嵌入式宿主（`cli/src/main.ts` 用 `createAgentSessionServices` / `createAgentSessionFromServices` / `createAgentSessionRuntime`，RPC 模式即进程内 session）。可把**子代理**从「子进程 `pi --mode json -p`」改为「进程内 `createAgentSessionServices` 一次性 prompt」。OpenClaw（`openclaw/openclaw` 的 `pi-embedded-runner`，同一 `pi-coding-agent` base）验证了该模式。
+
+**收益**：免子进程启动开销（并行/短任务显著变快）、复用 auth/model registry、原生流式回调、可上下文继承、可注入自定义工具。
+
+**代价 / 冲突**：
+- per-subagent `process.env` 注入失效（同进程只有一份 env）→ 现有「env + safety 扩展拦截」安全链断裂。
+- OS 沙箱进程内不可行；故障隔离丢失（子代理崩溃/死循环会拖垮主 sidecar）。
+- worktree（cwd 指 worktree）与 cancel（AbortSignal）仍兼容。
+
+**推荐形态：混合后端 + 由 capability profile 自动选**
+- 只读/低危 profile（explore/reviewer，无写/无 exec/无网）→ `embedded` 快路径：安全靠**进程内按 profile 过滤工具集**（不注册被 `deny` 的 write/bash/web 工具，从源头限制，借鉴 OpenClaw tool-definition-adapter + policy filtering），且无危险工具时进程内运行天然无害。
+- 可写/高危 profile（executor 等）→ 维持 `process` + worktree +（未来）sandbox 强隔离。
+
+**落地要点**：新增 embedded backend（`createAgentSessionServices` 跑一次性 prompt + profile 过滤工具 + cwd=worktree + AbortSignal）+ 后端选择逻辑；纯增量，保留并默认走子进程路径，可回退。安全语义从「env 收紧」迁移到「toolset 收紧」是该后端的前提。
+
+**状态**：暂不实现（用户决定先验收 P0–P4-lite）。如启用，按上述「混合后端」设计，避免整体改 embedded 而牺牲隔离。
