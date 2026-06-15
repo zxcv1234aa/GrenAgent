@@ -1,4 +1,4 @@
-import { AudioLines, BookOpen, Boxes, Brain, Globe, Image, Palette, Settings2, ShieldCheck } from 'lucide-react';
+import { AudioLines, BookOpen, Boxes, Brain, Cpu, Globe, Image, Palette, Settings2, ShieldCheck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export type FieldType = 'text' | 'password' | 'number' | 'boolean' | 'select' | 'model';
@@ -51,13 +51,6 @@ export const SETTINGS_SCHEMA: SettingCategory[] = [
     icon: Settings2,
     fields: [
       {
-        key: 'OPENAI_API_KEY',
-        label: 'OpenAI API Key',
-        type: 'password',
-        placeholder: 'sk-...',
-        description: '全局兜底密钥，各能力未单独配置时共用',
-      },
-      {
         key: 'titleModel',
         label: '对话标题模型',
         type: 'model',
@@ -66,6 +59,14 @@ export const SETTINGS_SCHEMA: SettingCategory[] = [
         effect: 'instant',
       },
     ],
+  },
+  {
+    // 供应商管理：由 SettingsPanel 特判渲染 ProvidersSettings（读写 ~/.pi/agent/models.json + auth.json）。
+    id: 'providers',
+    title: '供应商',
+    group: '核心',
+    icon: Cpu,
+    fields: [],
   },
   {
     // 外观为前端主题设置（themeStore，非后端 config），由 SettingsPanel 特判渲染 AppearanceSettings。
@@ -221,6 +222,20 @@ export const SETTINGS_SCHEMA: SettingCategory[] = [
             type: 'model',
             placeholder: '如 deepseek/deepseek-chat',
             description: '留空＝继承主代理默认',
+          },
+          {
+            key: 'SUBAGENT_MODEL_CHEAP',
+            label: '子代理便宜模型（档案别名 cheap）',
+            type: 'model',
+            placeholder: '如 deepseek/deepseek-chat',
+            description: '能力档案 model:"cheap" 解析到此；留空回退「子代理模型」',
+          },
+          {
+            key: 'SUBAGENT_MODEL_STRONG',
+            label: '子代理强模型（档案别名 strong）',
+            type: 'model',
+            placeholder: '如 openai/gpt-4o',
+            description: '能力档案 model:"strong" 解析到此；留空回退「子代理模型」',
           },
           { key: 'PI_BIN', label: '子代理可执行文件', type: 'text', description: '留空＝复用本体 sidecar' },
         ],
