@@ -14,6 +14,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { Type } from "typebox";
 import { getAllConfig, getConfig, watchConfig } from "../_shared/runtime-config.js";
 import { injectDefaultServers, type McpServerConfig, parseMcpServers, sanitize } from "./config.js";
+import { writeToolsCacheEntry } from "./toolsCache.js";
 import { diffServers } from "./diff.js";
 
 const MCP_TIMEOUT_MS = Number(process.env.MCP_TIMEOUT_MS ?? "60000") || 60000;
@@ -102,10 +103,20 @@ export default function (pi: ExtensionAPI) {
         }
       }
       registry.set(s.name, { status: "connected", tools: tools.length, toolNames: newNames });
+      try {
+        writeToolsCacheEntry(s.name, { ok: true, toolNames: newNames });
+      } catch (cacheErr) {
+        console.error(`[mcp] tools-cache write failed for "${s.name}": ${cacheErr instanceof Error ? cacheErr.message : cacheErr}`);
+      }
       console.error(`[mcp] connected "${s.name}" (${s.transport}); ${tools.length} tools registered`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       registry.set(s.name, { status: "failed", tools: 0, error: msg });
+      try {
+        writeToolsCacheEntry(s.name, { ok: false, toolNames: [], error: msg });
+      } catch {
+        // best-effort cache; ignore
+      }
       console.error(`[mcp] failed to connect "${s.name}": ${msg}`);
     }
     pushStatus?.();

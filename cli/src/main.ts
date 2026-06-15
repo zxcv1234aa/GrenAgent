@@ -87,6 +87,13 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, agentDir, 
 async function run(): Promise<void> {
   const argv = process.argv.slice(2);
 
+  // 一次性探测子命令（管理面板「测试连接」用）：不启动 pi 运行时，仅连 MCP server 取工具名。
+  if (argv[0] === "probe-mcp") {
+    const { runProbeCli } = await import("../../extensions/mcp/probe.js");
+    await runProbeCli();
+    return;
+  }
+
   // RPC mode (Tauri) → our own runtime so skillsOverride can filter skills.
   if (isRpcMode(argv)) {
     const cwd = process.cwd();
