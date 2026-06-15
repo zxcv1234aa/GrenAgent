@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, memo } from 'react';
-import { ThemeProvider, Flexbox } from '@lobehub/ui';
+import { ThemeProvider, Flexbox, ConfigProvider } from '@lobehub/ui';
+import { m } from 'motion/react';
 import { ThemeBridge } from './components/ThemeBridge';
 import { ExtensionUiHost } from './features/extensionUi/ExtensionUiHost';
 import { useThemeStore } from './stores/themeStore';
@@ -175,7 +176,7 @@ const TerminalColumn = memo(function TerminalColumn() {
 });
 
 function Workspace() {
-  const { store, workspace, setWorkspaceReady, workspaceReady } = useAgentStoreContext();
+  const { store, workspace, setWorkspaceReady, appBooted } = useAgentStoreContext();
   const isStreaming = store.useStore((s) => s.isStreaming);
   const activeSessionPath = useSessionStore((s) => s.activeSessionPath);
   const messages = store.useStore((s) => s.messages);
@@ -208,7 +209,6 @@ function Workspace() {
         useSessionStore.getState().setLoading(false);
         return;
       }
-      setWorkspaceReady(false);
       useSessionStore.getState().setLoading(true);
 
       try {
@@ -260,7 +260,6 @@ function Workspace() {
     return () => {
       alive = false;
       clearTimeout(readyGuard);
-      setWorkspaceReady(false);
     };
   }, [store, workspace, setWorkspaceReady]);
 
@@ -338,9 +337,15 @@ function Workspace() {
 
   const handleNewConversation = useCallback(async () => {
     const { cwd } = await pi.createConversation();
-    invalidateAllSessionsCache();
+    // createConversation 只建空 works/<uuid> 目录，pi 在 newSession 前不会把 session 落盘到
+    // ~/.pi/agent/sessions；而侧边栏「对话」列表来自 list_all_sessions 扫描已落盘的 session 文件。
+    // 故对齐 handleNewSession：先 openWorkspace 起进程、再 newSession 落盘首个 session，
+    // refreshAllSessions 才能扫到这条新对话（否则列表不刷新）。
+    await pi.openWorkspace(cwd);
     const st = useSessionStore.getState();
     st.setActiveSession('');
+    await pi.newSession(cwd);
+    invalidateAllSessionsCache();
     st.setActiveWorkspace(cwd);
     void refreshAllSessions(true);
   }, []);
@@ -457,13 +462,15 @@ function Workspace() {
           />
         </Flexbox>
       </Flexbox>
-      <FullscreenLoading visible={!workspaceReady} />
+      <FullscreenLoading visible={!appBooted} />
     </Flexbox>
   );
 }
 
 export default function App() {
   const appearance = useThemeStore((s) => s.appearance);
+  const primaryColor = useThemeStore((s) => s.primaryColor);
+  const neutralColor = useThemeStore((s) => s.neutralColor);
   const activeWorkspace = useSessionStore((s) => s.activeWorkspace);
 
   useEffect(() => {
@@ -497,12 +504,14 @@ export default function App() {
   }, []);
 
   return (
-    <ThemeProvider themeMode={appearance}>
-      <ThemeBridge />
-      <ExtensionUiHost />
-      <AgentStoreProvider workspace={activeWorkspace}>
-        <Workspace />
-      </AgentStoreProvider>
+    <ThemeProvider themeMode={appearance} customTheme={{ primaryColor, neutralColor }}>
+      <ConfigProvider motion={m}>
+        <ThemeBridge />
+        <ExtensionUiHost />
+        <AgentStoreProvider workspace={activeWorkspace}>
+          <Workspace />
+        </AgentStoreProvider>
+      </ConfigProvider>
     </ThemeProvider>
   );
 }
