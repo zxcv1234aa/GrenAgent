@@ -24,8 +24,11 @@ afterEach(() => {
 describe('ConnectionsPanel', () => {
   it('renders gateway fields prefilled', async () => {
     render(<ConnectionsPanel />);
-    await waitFor(() => expect(screen.getByTestId('conn-field-IM_GATEWAY_PORT')).toBeTruthy());
-    expect((screen.getByTestId('conn-field-IM_GATEWAY_PORT') as HTMLInputElement).value).toBe('8765');
+    await waitFor(() => {
+      const el = screen.getByTestId('conn-field-IM_GATEWAY_PORT');
+      const input = (el.tagName === 'INPUT' ? el : el.querySelector('input')) as HTMLInputElement | null;
+      expect(input?.value).toBe('8765');
+    });
     expect(screen.getByText('Slack')).toBeTruthy();
   });
 
