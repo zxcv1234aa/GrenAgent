@@ -1,14 +1,14 @@
-# long-term-memory 检索升级设计规格 — sqlite-vec 向量索引 / 结构化过滤 / 降权老化
+# long-term-memory 检索升级设计规格 — 结构化过滤 / 纯 JS 向量召回优化 / 降权老化
 
 > **面向 AI 代理：** 这是设计规格（spec）。下一步用 `superpowers:writing-plans` 产出实现计划，再用 `superpowers:executing-plans` 内联执行（本仓库**禁止子代理**）。
 >
 > 配套计划：`docs/superpowers/plans/2026-06-15-memory-retrieval-plan.md`（writing-plans 阶段生成）。
 
-**目标：** 把 `extensions/long-term-memory` 的召回从「全表加载 + 内存 cosine」升级为 **sqlite-vec ANN**，并补齐**结构化过滤**与**基于使用度的降权排序**，使记忆量增长后仍快、召回更准——同时保持扩展「开箱即跑、可回退、不丢事实」的现有特性。
+**目标：** 把 `extensions/long-term-memory` 的召回从「每次全表 SELECT + 逐条 decode BLOB + 全量内存 cosine」优化为「**结构化过滤缩候选 + 预解码向量缓存 + 加权重排**」，并补齐**基于使用度的降权排序**——全程**纯 JS、零新增依赖**，与 Pi 的 `bun --compile` 单二进制 sidecar + 「复制即跑」完全兼容。
 
-**架构原则：** 改动全部落在 `extensions/long-term-memory/`。**不动** `consolidate.ts`（mem0 写入决策）、`history`/`rollback`、双 scope（project/global）合并语义；**不改** Rust/Tauri 后端、不改 `cli` runtime、不改前端。
+**架构原则：** 改动全部落在 `extensions/long-term-memory/`。**不动** `consolidate.ts`（mem0 写入决策）、`history`/`rollback`、双 scope 合并语义、`_shared/sqlite.ts`（跨 bun/node 的 SQLite 封装）。**不引入任何原生扩展**。
 
-**技术栈：** TypeScript（Node **≥ 23.5**，因 `loadExtension`）+ `node:sqlite` + `sqlite-vec` + `@earendil-works/pi-coding-agent` ExtensionAPI + typebox + vitest（node 环境）。
+**技术栈：** TypeScript + `node:sqlite`/`bun:sqlite`（经现有 `_shared/sqlite.ts`，不改）+ 纯 JS 向量计算 + typebox + vitest（node 环境）。**无新增运行时依赖。**
 
 ---
 
@@ -16,18 +16,26 @@
 
 ### 1.1 现状（实测）
 
-- **存储：** `store.ts` 用 `node:sqlite`(DatabaseSync)。`memories` 表：`id`(TEXT pk)、`text`、`category`、`createdAt`、`updatedAt`、`version`、`embedding`(Float32 BLOB)；另有 `memory_history` 表。双 scope：`project`(`<cwd>/.pi/memory/memory.db`) 与 `global`(`~/.pi/agent/long-term-memory.db`) 各一 `MemoryStore` 实例。
-- **召回：** `recall()` 全表 `SELECT ... FROM memories` 后在 JS 内存逐条算 `cosine`（无 embedding 时退化 `keywordScore`），再排序取 topK。复杂度 O(n) 扫描 + O(n·d) 算分。
-- **写入：** `consolidate.ts` mem0 风格——召回相似 top5 → LLM 决策 ADD/UPDATE/DELETE/NOOP；`history` + `rollback` 保证可撤销、不丢事实。
-- **依赖：** `package.json` 无 `dependencies`，纯 `node:` 内置 + 宿主注入；无 key 时关键词兜底，开箱即跑。
+- **存储：** `store.ts` 经 `_shared/sqlite.ts` 用 SQLite（`memories` 表：`id`(TEXT pk)、`text`、`category`、`createdAt`、`updatedAt`、`version`、`embedding` Float32 BLOB；另 `memory_history` 表）。双 scope（project/global 各一 `MemoryStore`）。
+- **召回：** `recall()` 每次 `SELECT * FROM memories` → 逐条 `decodeEmbedding`(BLOB→Float32) → 全量 `cosine`（无 embedding 时 `keywordScore`）→ 排序取 topK。
+- **写入：** `consolidate.ts` mem0 风格 LLM 决策；`history` + `rollback` 保证可撤销、不丢事实。
+- **依赖：** `package.json` 无 `dependencies`，纯 `node:` 内置 + 宿主注入；无 key 关键词兜底，开箱即跑。
 
-### 1.2 缺口
+### 1.2 运行时约束（关键 — 决定本方案走向）
+
+- Pi 把扩展包**编译进 `bun --compile` 单二进制 sidecar**，运行时是 **`bun:sqlite`**（`_shared/sqlite.ts` 用「变量 require」按运行时选 `bun:sqlite`/`node:sqlite`，并刻意绕开 bun 对 `node:sqlite` 的静态解析）。
+- **原生动态库（`sqlite-vec` 的 `.dylib/.so/.dll`）无法嵌入 `bun --compile` 单二进制**：必须从文件系统 `dlopen`，已知大量案例（`@libsql`/`sharp`/`onnxruntime`/`transformers.js`）在编译后移动位置即崩 `Cannot find module '.../$bunfs/...'`。macOS 上 bun 还用 Apple SQLite（禁用扩展），需 `Database.setCustomSQLite()` 指向用户自装的 vanilla SQLite。
+- **结论：** 排除 sqlite-vec 及任何原生 ANN；用纯 JS 实现，保持单二进制 + 零原生依赖 + 复制即跑。
+
+### 1.3 缺口
 
 | 维度 | 现状 | 缺口 |
 |------|------|------|
-| 检索性能 | 全表内存 cosine | 记忆上千条后线性扫描变慢（唯一扩展性硬伤） |
+| 检索性能 | 每次全表 SELECT + **逐条重复 decode BLOB** + 全量 cosine | 重复解码 + 无候选裁剪；记忆变多后线性成本叠加 |
 | 结构化过滤 | 仅按 score 排序 | 无法按 `category`/时间/scope 收窄候选 |
 | 排序质量 | 纯相似度 | 无使用度/时效加权，常用记忆不上浮、旧记忆不沉降 |
+
+> 量级判断：单用户 coding agent 记忆通常几百~几千条。1536 维 × 几千条的纯 JS 暴力 cosine 约几十毫秒，**足够**；真正的浪费在「每次 recall 重复 decode 全量 BLOB」和「不裁剪候选」。故优化目标是消除重复解码 + 结构化裁剪，而非引入 ANN 索引。
 
 ---
 
@@ -35,98 +43,86 @@
 
 ### 2.1 覆盖（三块，按阶段实现）
 
-- **向量索引：** 用 sqlite-vec `vec0` 影子表替换全表内存 cosine，含加载失败回退。
-- **结构化过滤：** `category` / 时间范围 / scope 进入查询，缩小候选集。
+- **检索优化（纯 JS）：** 结构化过滤前置裁剪候选 + 预解码向量缓存（消除每次 recall 的重复 BLOB 解码）。
+- **结构化过滤：** `category` / 时间范围 / scope 进入查询与召回 API。
 - **降权老化：** 新增 `useCount` / `lastUsedAt`，命中即更新，融入加权排序（**只降权、不删除**）。
 
 ### 2.2 非目标（YAGNI）
 
-- 不引入五层记忆 / persona 聚合（对单用户 coding agent 过度设计）。
-- 不改 `consolidate` 写入决策、不改 `history`/`rollback`、不改双 scope 合并语义。
-- 不改 Rust/Tauri 后端、`cli` runtime、前端。
+- 不引入 `sqlite-vec` 或任何原生扩展（保 `bun --compile` 单二进制 + 复制即跑）。
+- 不构建真正的 ANN 索引（量级不需要；纯 JS 暴力 + 缓存足够）。
+- **int8 量化仅作预留**：本期不实现；仅在 §8 记录接口位置，留待记忆量级真正变大时再做。
+- 不改 `consolidate`/`history`/`rollback`/双 scope 语义、`_shared/sqlite.ts`、Rust/Tauri/前端。
 - 不自动删除任何记忆（老化仅影响排序）。
-- 不引入外部向量服务 / 向量数据库（保持 in-process、单文件）。
 
 ---
 
-## 3. 数据层：vec0 影子表
+## 3. 数据层
 
-### 3.1 设计
+### 3.1 表结构
 
-现有 `memories` 表**保持不变**，每个库新增一张 vec0 虚拟表，与 `memories` 的隐式 `rowid` 一对一对齐：
-
-```sql
--- N = embedding 维度（见 3.3）
-CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories USING vec0(embedding float[N]);
-```
-
-新增两列老化字段（**Phase 3 引入**，沿用现有 `migrate()` 的 PRAGMA 增量迁移，老库无损升级）：
+- `memories` 表**基本不变**；`save()` 的 `INSERT OR REPLACE` **保留不动**（纯 JS 方案不需要 rowid 对齐，故无 §sqlite-vec 方案中的 upsert 改造）。
+- 新增两列老化字段（**Phase 3 引入**，沿用现有 `migrate()` 的 PRAGMA 增量迁移，老库无损升级）：
 
 ```sql
-ALTER TABLE memories ADD COLUMN lastUsedAt INTEGER;          -- 最近一次被召回命中的时间(ms)
+ALTER TABLE memories ADD COLUMN lastUsedAt INTEGER;          -- 最近被召回命中的时间(ms)
 ALTER TABLE memories ADD COLUMN useCount   INTEGER DEFAULT 0; -- 被召回命中的累计次数
 ```
 
-加载时启用扩展并 `load`：
+### 3.2 内存向量缓存
+
+`MemoryStore` 维护一份内存缓存，消除每次 `recall` 的重复 BLOB 解码：
 
 ```ts
-const db = new DatabaseSync(file, { allowExtension: true });
-sqliteVec.load(db);   // 见 8. 降级：此处包 try/catch
+interface CachedVec { vec: Float32Array; norm: number; }   // norm 预计算，cosine 复用
+private vecCache: Map<string /*id*/, CachedVec> | null = null;  // null = 未初始化
 ```
 
-### 3.2 rowid 对齐与同步
+- **懒初始化**：首次 `recall` 时一次性 `SELECT id, embedding FROM memories`，解码并预算 `norm`，填充缓存。
+- **增量维护**：`insert`/`save` 写入缓存条目；`update` 重算 embedding 时更新；`remove`/`rollback` 删除/重置对应条目；`clear` 清空缓存。
+- **一致性兜底**：以 DB 为准；任何疑似不一致场景可丢弃缓存（置 `null`）下次重建。
 
-- `vec_memories.rowid` 取 `memories` 行的隐式 `rowid`（`memories` 主键是 TEXT，不是 rowid alias，故有独立隐式 rowid）。
-- `insert`/`save`：写 `memories` 后取 `info.lastInsertRowid`，以该 rowid 写入 `vec_memories(rowid, embedding)`。
-- `update`：文本变更重算 embedding 时，`UPDATE vec_memories SET embedding=? WHERE rowid=?`。
-- `remove`/`rollback`：删除 `memories` 行的同时 `DELETE FROM vec_memories WHERE rowid=?`。
-
-### 3.3 维度管理
-
-- `meta` 表记录建表时的向量维度 `dim`；首次建 `vec_memories` 用当前 embedding 模型维度（`text-embedding-3-small` = 1536）。
-- 若 `resolveEmbeddingConfig()` 的模型维度与 `meta.dim` 不符（换模型）→ `DROP TABLE vec_memories` 重建并回填（见 7. 迁移）。
-
-### 3.4 决策
+### 3.3 决策
 
 | 决策 | 选项 | 结论 | 理由 |
 |------|------|------|------|
-| 索引组织 | vec0 影子表 / vec0 元数据列 / 重构 | **影子表** | 最小侵入；现有 CRUD/history/rollback 全复用；删表即回退 |
-| `save()` 幂等写 | 保留 `INSERT OR REPLACE` / 改显式 upsert | **改 `ON CONFLICT(id) DO UPDATE`** | `REPLACE` 会变更 rowid 致影子表错位；upsert 保持 rowid 稳定（有针对性的现有代码改进） |
-| 过滤位置 | 应用层 join 后过滤 / vec0 元数据过滤 | **起步 join 后过滤** | 不改 vec0 表结构；vec0 元数据过滤留作 Phase 2 可选优化 |
+| 向量后端 | sqlite-vec / 纯 JS / better-sqlite3 | **纯 JS** | bun --compile 无法嵌入原生扩展；纯 JS 零依赖、单二进制兼容、量级够用 |
+| 重复解码 | 每次 decode / 内存缓存 | **内存向量缓存（懒初始化+增量维护）** | 消除每次 recall 的全量 BLOB 解码，单实例可控一致性 |
+| `save()` 写法 | 保留 INSERT OR REPLACE / 改 upsert | **保留不动** | 纯 JS 无 rowid 对齐需求，无须改动 |
+| 候选裁剪 | 全量算分 / SQL 过滤前置 | **SQL 过滤前置** | category/时间过滤直接缩小要算 cosine 的行数 |
 
 ---
 
-## 4. 检索流程（两段式 + 加权重排）
+## 4. 检索流程
 
 ```
-recall(query, topK, filters):
-  1. vecEnabled? 否 → 回退现有全表 cosine/keyword（见 8）
-  2. qv = embed(query)
-  3. KNN over-fetch:
-       SELECT rowid, distance FROM vec_memories
-       WHERE embedding MATCH :qv ORDER BY distance LIMIT topK * F   -- F 默认 4
-  4. join memories 取正文/元数据/useCount/lastUsedAt
-  5. 结构化过滤: category ∈ filters?、createdAt ∈ [from,to]?（scope 由 recallMerged 合并两库后处理）
-  6. 加权重排（见 5），截取 topK
-  7. 命中项批量 UPDATE useCount = useCount + 1, lastUsedAt = now
+recall(query, topK, filters?):
+  1. config.enabled?  否 → 关键词召回分支（现有逻辑，含 filters 过滤）
+  2. ensureVecCache()                                   // 懒初始化向量缓存
+  3. 候选集 = SQL 过滤: SELECT id,text,category,createdAt[,useCount,lastUsedAt]
+              FROM memories WHERE (category IN :cats)? AND (createdAt BETWEEN :from,:to)?
+  4. qv = embed(query); qnorm = norm(qv)
+  5. 对候选: sim = dot(qv, cache[id].vec) / (qnorm * cache[id].norm)   // 复用预算 norm
+  6. 加权重排（§5），截取 topK
+  7. （Phase 3）命中项批量 UPDATE useCount=useCount+1, lastUsedAt=now，并同步可能的内存态
 ```
 
-- **over-fetch 因子 F**：因结构化过滤会筛掉部分候选，KNN 先多取 `topK×F` 保证过滤后仍够 `topK`；过滤后不足时按现有数据返回。
-- 向量参数与 BLOB 编解码沿用现有 `encodeEmbedding`/`decodeEmbedding`（Float32 ↔ `Uint8Array`），vec0 `MATCH` 入参为 `new Uint8Array(Float32Array.from(qv).buffer)`。
+- 结构化过滤在 **SQL 层**完成（缩小候选），向量算分在 **内存缓存** 完成（免重复解码）。
+- 向量 BLOB 编解码沿用现有 `encodeEmbedding`/`decodeEmbedding`（Float32 ↔ `Uint8Array`）。
 
 ---
 
 ## 5. 排序公式
 
 ```
-score = w_sim · (1 − distance)
+score = w_sim · sim
       + w_recency · exp(−Δt / τ)        // Δt = now − lastUsedAt；从未命中按 createdAt
       + w_usage · norm(useCount)        // norm = log(1 + useCount) / log(1 + USE_CAP)
 ```
 
 - 默认权重 `w_sim=0.7 / w_recency=0.2 / w_usage=0.1`，`τ` 默认 30 天，`USE_CAP` 默认 20。
-- 权重/常量先以模块常量实现；如需可调再加 env（YAGNI，先不加）。
-- Phase 1 仅用 `w_sim`（行为对齐现状，纯距离排序）；Phase 2 引入 recency；Phase 3 引入 usage。
+- 抽成纯函数 `scoreMemory(...)` 便于单测；权重/常量先以模块常量实现（YAGNI，暂不加 env）。
+- Phase 1 仅用 `w_sim`（行为对齐现状）；Phase 2 引入 recency；Phase 3 引入 usage。
 
 ---
 
@@ -137,76 +133,87 @@ score = w_sim · (1 − distance)
 
 ---
 
-## 7. 迁移 / 兼容
+## 7. 缓存一致性
 
-- **回填：** 首次加载若 `vec_memories` 为空而 `memories` 已有 embedding BLOB → 批量回填进 `vec_memories`（一次性，按 rowid）。
-- **惰性补算：** 无 embedding 的老库，在配置了 key 后，写入/召回路径按现有逻辑逐步补算并落 `vec_memories`。
-- **维度变更：** `meta.dim` 与当前模型不符 → 重建 `vec_memories` 并回填。
-- **老库字段：** `lastUsedAt`/`useCount` 由 `migrate()` 增列，缺省 `useCount=0`、`lastUsedAt=NULL`（排序按 `createdAt` 兜底）。
+| 写路径 | 缓存动作 |
+|--------|----------|
+| `insert` / `save` | 解码新 embedding 写入缓存（无 embedding 则不写） |
+| `update`（文本变、重算 embedding） | 更新该 id 的缓存条目 |
+| `remove` / `rollback`（删除态） | 删除该 id 缓存条目 |
+| `rollback`（恢复态） | 重算并写回缓存条目 |
+| `clear` | 清空缓存（置 `null` 或空 Map） |
+| 懒初始化未触发 | 首次 `recall` 全量加载 |
 
 ---
 
-## 8. 降级 / 错误处理（关键）
+## 8. 预留：int8 量化（本期不实现）
 
-`sqliteVec.load(db)` 必须包 try/catch，失败时置 `vecEnabled=false`，召回回退现有实现，扩展永不因此崩。
+记忆量真正变大（如 ≥ 数万条）时，可把缓存向量量化为 int8（每维 `round(v / scale)`，4× 内存压缩 + 整数点积更快）做快速预筛，再对 top 候选用 float32 精算（两段式）。**本期 YAGNI 不做**，仅在缓存结构上预留扩展位（`CachedVec` 可后续加 `q?: Int8Array`）。
+
+---
+
+## 9. 降级 / 错误处理
 
 | 场景 | 处理 |
 |------|------|
-| Node < 23.5 / 缺 `loadExtension` | `load` 抛错 → `vecEnabled=false` → 回退全表 cosine/keyword |
-| 缺平台预编译二进制 / `load` 失败 | 同上，回退；打印一次 warn |
-| 无 embedding key（`config.enabled=false`） | 走现有关键词召回（与 vec 无关） |
-| 维度不匹配 | 重建 `vec_memories` 回填；回填中临时走全表兜底 |
-| KNN 过滤后不足 topK | 返回现有数量，不报错 |
-| `save` upsert 迁移期老库仍 REPLACE | 迁移逻辑确保 rowid 稳定后再启用影子表写入 |
+| 无 embedding key（`config.enabled=false`） | 走现有关键词召回（叠加 §4 的结构化过滤） |
+| 缓存与 DB 疑似不一致 | 以 DB 为准；丢弃缓存（置 `null`）下次重建 |
+| 候选过滤后为空 | 返回空结果，不报错 |
+| 老库无 `useCount`/`lastUsedAt` | `migrate` 增列；缺省 `useCount=0`、`lastUsedAt=NULL`（排序按 `createdAt` 兜底） |
+| 某条无 embedding（混合库） | 该条向量分计 0（与现状一致），仍可被关键词/过滤命中 |
 
 ---
 
-## 9. 测试（vitest，node 环境）
+## 10. 测试（vitest，node 环境）
 
-- KNN 召回正确性（装 sqlite-vec）：插入已知向量，验证 MATCH 排序与 topK。
-- **降级路径**：强制 `vecEnabled=false`，验证回退到现有 cosine/keyword 且结果与升级前一致。
-- 迁移：老库（有/无 embedding）首次加载回填；维度变更重建。
-- rowid 同步：insert/update/remove/rollback 后 `vec_memories` 与 `memories` 一致；`save` upsert 后 rowid 不变。
+- 向量缓存：懒初始化加载、insert/update/remove/rollback/clear 后缓存与 DB 一致。
+- 召回等价：相同数据下，缓存路径 recall 结果与「现状全表 decode」一致（防回归）。
+- 结构化过滤：按 category / 时间范围筛选正确。
+- 排序：`scoreMemory` 纯函数单测（sim/recency/usage 各项与组合）。
 - 老化：命中后 `useCount`/`lastUsedAt` 更新且影响排序顺序。
+- 降级：无 key 走关键词 + 过滤。
 - 复用现有 `store.test.ts`/`consolidate.test.ts` 风格与夹具。
 
 ---
 
-## 10. 分期实现顺序
+## 11. 分期实现顺序
 
 | 阶段 | 内容 | 依赖 | 验收（独立可交付） |
 |------|------|------|--------------------|
-| **Phase 1 — 向量索引** | sqlite-vec 接入、`vec0` 影子表、rowid 同步、回填迁移、`recall` 走 ANN（仅 `w_sim`）、加载失败回退、`save` 改 upsert | 无 | 召回结果与现状对等，但走索引、去掉全表扫描；老 Node 自动回退 |
-| **Phase 2 — 结构化过滤 + 时效** | `category`/时间过滤进查询、over-fetch、score 引入 `w_recency` | Phase 1 | 可按 category/时间筛；近期命中上浮 |
-| **Phase 3 — 老化降权** | `lastUsedAt`/`useCount` 字段、命中更新、score 引入 `w_usage` | Phase 1 | 常用记忆上浮、久不用下沉，无删除 |
+| **Phase 1 — 检索优化 + 结构化过滤** | 内存向量缓存（懒初始化+增量维护）、`recall` 改走缓存、`category`/时间过滤进 SQL、`recall`/`memory_recall` 加 filters 参数 | 无 | 召回结果与现状一致但不再重复全量 decode；可按 category/时间过滤 |
+| **Phase 2 — 加权重排（时效）** | 抽 `scoreMemory` 纯函数、引入 `w_recency` | Phase 1 | 近期命中上浮 |
+| **Phase 3 — 老化降权** | `lastUsedAt`/`useCount` 字段、命中更新、`scoreMemory` 引入 `w_usage` | Phase 1 | 常用记忆上浮、久不用下沉，无删除 |
 
-三阶段无强依赖于 P2/P3 之间（均依赖 P1 的数据层），可顺序内联实现，每阶段独立可合并、可验证、可回退。
+P2/P3 均依赖 P1 的检索重构，可顺序内联实现；每阶段独立可合并、可验证。
 
 ---
 
-## 11. 决策记录
+## 12. 决策记录
 
 | 决策 | 选项 | 结论 | 理由 |
 |------|------|------|------|
-| 范围 | 仅索引 / 索引+过滤+老化 / 含分层persona | **索引+过滤+老化** | 补齐召回质量与扩展性，不上重型建模 |
-| 向量后端 | sqlite-vec / 纯 JS ANN / better-sqlite3 | **sqlite-vec** | node:sqlite 原生支持 `load`，预编译二进制免编译、in-process 零服务 |
-| 依赖形态 | 硬依赖 / 可选回退 | **硬依赖 + 加载失败回退** | 用户决策；sqlite-vec 轻（非「重依赖」），但保留回退防老 Node 崩 |
+| 范围 | 仅检索优化 / 优化+过滤+老化 / 含分层persona | **优化+过滤+老化** | 补齐召回质量，不上重型建模 |
+| 向量后端 | sqlite-vec / 纯 JS / better-sqlite3 | **纯 JS** | bun --compile 不能嵌原生扩展；纯 JS 零依赖、复制即跑、量级够用 |
+| 解码成本 | 每次 decode / 内存缓存 | **内存向量缓存** | 消除每次 recall 重复解码（最大浪费点） |
 | 老化行为 | 降权不删 / 软清理 / 硬删除 | **降权不删** | 契合现有「不丢事实 + 可回滚」哲学 |
-| 索引组织 | 影子表 / vec0 元数据列 | **影子表起步** | 最小侵入、易回退；元数据过滤留 Phase 2 |
-| Node 版本 | ≥22.5 / ≥23.5 | **≥23.5（或 22.13 LTS）** | `loadExtension` 引入版本 |
+| int8 量化 | 本期做 / 预留 | **预留不做** | 当前量级 float32 缓存足够（YAGNI） |
+| 依赖 | 新增 sqlite-vec / 零新增 | **零新增依赖** | 保持开箱即跑、单二进制兼容 |
+
+> 历史记录：初版 spec 曾按 sqlite-vec 设计，后发现 Pi 是 bun --compile 单二进制（`_shared/sqlite.ts`），原生扩展无法嵌入/加载，遂改纯 JS 方案。
 
 ---
 
-## 12. 相关文件（现状）
+## 13. 相关文件（现状）
 
-- `extensions/long-term-memory/store.ts` — `MemoryStore`：建表/CRUD/`recall`/history/rollback（**主改**：影子表、rowid 同步、ANN 召回、老化字段、`save` upsert）
-- `extensions/long-term-memory/embedding.ts` — `resolveEmbeddingConfig`/`embedTexts`（维度来源；基本不改）
-- `extensions/long-term-memory/index.ts` — 工具/命令/注入接线（`recall` 调用方；过滤参数透传）
+- `extensions/long-term-memory/store.ts` — `MemoryStore`：建表/CRUD/`recall`/history/rollback（**主改**：向量缓存、过滤、加权重排、老化字段）
+- `extensions/long-term-memory/embedding.ts` — `resolveEmbeddingConfig`/`embedTexts`（不改）
+- `extensions/long-term-memory/index.ts` — 工具/命令/注入接线（`memory_recall` 加 filters 参数透传）
 - `extensions/long-term-memory/consolidate.ts` — mem0 写入决策（**不改**，仅复用 `recall`）
 - `extensions/long-term-memory/store.test.ts` / `consolidate.test.ts` — 测试风格与夹具参考
-- `extensions/long-term-memory/package.json` — 新增 `dependencies: { "sqlite-vec": "*" }`、Node engines `>=23.5`
-- `extensions/long-term-memory/README.md` — 更新配置/版本要求/「进阶扩展点」勾选
+- `extensions/_shared/sqlite.ts` — 跨 bun/node SQLite 封装（**不改**；本方案不需要 loadExtension）
+- `extensions/long-term-memory/package.json` — **无须新增依赖**（纯 JS）
+- `extensions/long-term-memory/README.md` — 更新「进阶扩展点」勾选（向量召回优化/遗忘策略）
 
 ---
 
-**状态：** 设计已经用户批准，待 writing-plans 定稿计划。下一步 → `superpowers:writing-plans` 产出 `2026-06-15-memory-retrieval-plan.md`。
+**状态：** 设计已经用户批准（纯 JS 方案，bun --compile 约束已纳入），待 writing-plans 定稿计划。下一步 → `superpowers:writing-plans` 产出 `2026-06-15-memory-retrieval-plan.md`。
