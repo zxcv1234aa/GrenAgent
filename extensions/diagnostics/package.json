@@ -1,0 +1,19 @@
+{
+  "name": "pi-diagnostics",
+  "version": "0.1.0",
+  "description": "Diagnostics tool for the Pi coding agent: run tsc/eslint and return structured results.",
+  "private": true,
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "diagnostics"],
+  "license": "MIT",
+  "pi": { "extensions": ["./index.ts"] },
+  "scripts": { "test": "vitest run" },
+  "peerDependencies": { "typebox": "*" },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-agent-core": "*",
+    "typebox": "*",
+    "vitest": "^4.1.8"
+  }
+}

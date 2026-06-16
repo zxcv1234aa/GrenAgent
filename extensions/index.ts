@@ -7,6 +7,7 @@ import checkpoint from "./checkpoint/index.js";
 import compactionPolicy from "./compaction-policy/index.js";
 import loopGuard from "./loop-guard/index.js";
 import codeReview from "./code-review/index.js";
+import diagnostics from "./diagnostics/index.js";
 import imGateway from "./im-gateway/index.js";
 import goal from "./goal/index.js";
 import imageGen from "./image-gen/index.js";
@@ -43,6 +44,7 @@ export {
   mcpPolicy,
   imageGen,
   codeReview,
+  diagnostics,
   multiAgent,
   tts,
   imGateway,
@@ -68,6 +70,7 @@ export const allExtensions = [
   mcpPolicy,
   imageGen,
   codeReview,
+  diagnostics,
   multiAgent,
   tts,
   imGateway,
