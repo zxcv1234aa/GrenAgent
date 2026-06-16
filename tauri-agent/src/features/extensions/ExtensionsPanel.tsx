@@ -1,7 +1,7 @@
 import { Button, Flexbox } from '@lobehub/ui';
 import { Switch } from 'antd';
 import { createStaticStyles, cssVar } from 'antd-style';
-import { Boxes, Plus, RotateCw, ScrollText, Sparkles } from 'lucide-react';
+import { Boxes, Brain, Plus, RotateCw, ScrollText, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { probeMcpServer, readMcpPolicy, readMcpToolsCache, writeMcpPolicy } from '../../lib/mcpPolicyIo';
 import { pi } from '../../lib/pi';
@@ -11,6 +11,7 @@ import { parseCommands } from '../chat/input/commandUtils';
 import { useSettingsForm } from '../settings/useSettingsForm';
 import { AddMcpModal } from './AddMcpModal';
 import { AuditModal } from './AuditModal';
+import { CodeIntelTab } from './CodeIntelTab';
 import { McpServerCard } from './McpServerCard';
 import {
   listEntries,
@@ -44,7 +45,7 @@ function avatarBackground(name: string): string {
   return `linear-gradient(135deg, hsl(${hue} 62% 56%), hsl(${(hue + 38) % 360} 64% 46%))`;
 }
 
-type ExtTab = 'mcp' | 'skills';
+type ExtTab = 'mcp' | 'skills' | 'code-intel';
 
 const styles = createStaticStyles(({ css }) => ({
   panel: css`
@@ -373,7 +374,16 @@ export function ExtensionsPanel() {
     if (loading || !touchedRef.current) return;
     const timer = window.setTimeout(() => void persistRef.current(), 600);
     return () => window.clearTimeout(timer);
-  }, [values.MCP_SERVERS, values.MCP_SERVERS_DISABLED, values.SKILLS_DISABLED, loading]);
+  }, [
+    values.MCP_SERVERS,
+    values.MCP_SERVERS_DISABLED,
+    values.SKILLS_DISABLED,
+    values.CODE_INTEL,
+    values.CODE_INTEL_AUTO_INIT,
+    values.CODE_INTEL_EXPLORER,
+    values.CODE_INTEL_EXPLORER_MODEL,
+    loading,
+  ]);
 
   const markChanged = () => {
     touchedRef.current = true;
@@ -430,6 +440,15 @@ export function ExtensionsPanel() {
             <Sparkles size={15} />
             技能
           </button>
+          <button
+            type="button"
+            data-testid="ext-tab-code-intel"
+            className={`${styles.tab} ${tab === 'code-intel' ? styles.tabActive : ''}`}
+            onClick={() => setTab('code-intel')}
+          >
+            <Brain size={15} />
+            代码智能
+          </button>
         </div>
         {needsRestart ? (
           <button
@@ -450,7 +469,14 @@ export function ExtensionsPanel() {
 
       <div className={styles.body}>
         <div className={styles.inner}>
-          {tab === 'mcp' ? (
+          {tab === 'code-intel' ? (
+            <CodeIntelTab
+              values={values}
+              setValue={setValue}
+              onChange={markChanged}
+              knownToolNames={Object.values(toolsCache).flatMap((e) => e.toolNames)}
+            />
+          ) : tab === 'mcp' ? (
             <>
               <div className={styles.heroBar}>
                 <div className={styles.hero}>
