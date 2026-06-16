@@ -4,6 +4,7 @@
 
 import autoTitle from "./auto-title/index.js";
 import checkpoint from "./checkpoint/index.js";
+import compactionPolicy from "./compaction-policy/index.js";
 import loopGuard from "./loop-guard/index.js";
 import codeReview from "./code-review/index.js";
 import imGateway from "./im-gateway/index.js";
@@ -24,6 +25,7 @@ import webSearch from "./web-search/index.js";
 export {
   safety,
   loopGuard,
+  compactionPolicy,
   autoTitle,
   checkpoint,
   todo,
@@ -46,6 +48,7 @@ export {
 export const allExtensions = [
   safety,
   loopGuard,
+  compactionPolicy,
   autoTitle,
   checkpoint,
   todo,

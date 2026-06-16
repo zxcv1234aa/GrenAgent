@@ -1,0 +1,17 @@
+{
+  "name": "pi-compaction-policy",
+  "version": "0.1.0",
+  "description": "Context prune (ephemeral tool-output elision) + pressure levels for the Pi coding agent.",
+  "private": true,
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "compaction"],
+  "license": "MIT",
+  "pi": { "extensions": ["./index.ts"] },
+  "scripts": { "test": "vitest run" },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-agent-core": "*",
+    "vitest": "^4.1.8"
+  }
+}
