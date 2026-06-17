@@ -22,4 +22,12 @@ describe("runGh", () => {
     };
     await expect(runGh(["pr", "view", "1"], "/tmp", undefined, exec)).rejects.toThrow(/gh CLI/);
   });
+
+  it("times out when exec hangs", async () => {
+    const exec: Exec = (_cmd, _args, _cwd, signal) =>
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    await expect(runGh(["pr", "view", "1"], "/tmp", undefined, exec, 50)).rejects.toThrow(/超时/);
+  });
 });
