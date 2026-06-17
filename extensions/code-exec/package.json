@@ -1,0 +1,23 @@
+{
+  "name": "pi-code-exec",
+  "version": "0.1.0",
+  "description": "Persistent Python execution kernel for the Pi coding agent: a stateful REPL with stdout/value/traceback capture across calls.",
+  "private": true,
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "code-exec", "python", "repl"],
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*",
+    "vitest": "^4.1.8"
+  }
+}
