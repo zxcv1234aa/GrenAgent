@@ -36,12 +36,11 @@ fn launcher(dir: &Path) -> (PathBuf, Vec<String>) {
             dir.join("node.exe"),
             vec![
                 "--liftoff-only".to_string(),
-                dir.join("lib")
-                    .join("dist")
-                    .join("bin")
-                    .join("codegraph.js")
-                    .to_string_lossy()
-                    .to_string(),
+                // 相对入口（解析自 cwd = bundle dir，见 run_codegraph）。绝对入口若含空格
+                // （如 "D:\\OneDrive\\Project Files\\..."），codegraph 在非 TTY / piped 下用
+                // child_process 拉起索引 worker 时会在空格处截断入口，报
+                // "Cannot find module 'D:\\OneDrive\\Project'" / lstat 'D:'。相对入口规避。
+                "lib/dist/bin/codegraph.js".to_string(),
             ],
         )
     } else {
@@ -49,17 +48,16 @@ fn launcher(dir: &Path) -> (PathBuf, Vec<String>) {
     }
 }
 
-async fn run_codegraph(
-    app: &tauri::AppHandle,
-    workspace: &str,
-    args: &[&str],
-) -> Result<String, String> {
+async fn run_codegraph(app: &tauri::AppHandle, args: &[&str]) -> Result<String, String> {
     let dir = codegraph_dir(app);
     let (program, mut full_args) = launcher(&dir);
     full_args.extend(args.iter().map(|s| s.to_string()));
+    // cwd = bundle dir（不是 workspace）：win32 相对入口据此解析，且让 codegraph 的索引
+    // worker 子进程以无空格的相对入口启动。workspace 始终经命令行参数显式传入
+    // （init/status/sync/index <workspace>），不依赖 cwd。
     let output = tokio::process::Command::new(&program)
         .args(&full_args)
-        .current_dir(Path::new(workspace))
+        .current_dir(&dir)
         .output()
         .await
         .map_err(|e| format!("codegraph spawn failed ({}): {e}", program.display()))?;
@@ -77,26 +75,26 @@ async fn run_codegraph(
 /// Index status + statistics (`codegraph status <ws>`), human-readable text.
 #[tauri::command]
 pub async fn code_intel_status(app: tauri::AppHandle, workspace: String) -> Result<String, String> {
-    run_codegraph(&app, &workspace, &["status", workspace.as_str()]).await
+    run_codegraph(&app, &["status", workspace.as_str()]).await
 }
 
 /// Initialize CodeGraph and build the initial index (`codegraph init <ws>`).
 /// Idempotent: re-running on an initialized project is a no-op/refresh upstream.
 #[tauri::command]
 pub async fn code_intel_init(app: tauri::AppHandle, workspace: String) -> Result<String, String> {
-    run_codegraph(&app, &workspace, &["init", workspace.as_str()]).await
+    run_codegraph(&app, &["init", workspace.as_str()]).await
 }
 
 /// Incremental sync since last index (`codegraph sync <ws>`).
 #[tauri::command]
 pub async fn code_intel_sync(app: tauri::AppHandle, workspace: String) -> Result<String, String> {
-    run_codegraph(&app, &workspace, &["sync", workspace.as_str()]).await
+    run_codegraph(&app, &["sync", workspace.as_str()]).await
 }
 
 /// Full rebuild (`codegraph index -f <ws>`).
 #[tauri::command]
 pub async fn code_intel_reindex(app: tauri::AppHandle, workspace: String) -> Result<String, String> {
-    run_codegraph(&app, &workspace, &["index", "-f", workspace.as_str()]).await
+    run_codegraph(&app, &["index", "-f", workspace.as_str()]).await
 }
 
 /// Whether the workspace already has an index (presence of `.codegraph/`).

@@ -25,6 +25,11 @@ describe("parseMcpServers", () => {
   it("skips entries without command or url", () => {
     expect(parseMcpServers('{"bad":{"foo":1}}')).toEqual([]);
   });
+  it("parses a stdio server's cwd when present", () => {
+    expect(parseMcpServers('{"x":{"command":"c","cwd":"/d"}}')).toEqual([
+      { name: "x", transport: "stdio", command: "c", args: [], env: {}, cwd: "/d" },
+    ]);
+  });
 });
 
 describe("injectDefaultServers", () => {
@@ -65,10 +70,25 @@ describe("injectDefaultServers", () => {
 describe("injectDefaultServers · code-intel", () => {
   const base = { PI_PACKAGE_DIR: "/pkg" } as Record<string, string | undefined>;
 
-  it("injects codegraph by default (pointing at the bundled binary)", () => {
+  it("injects codegraph by default (pointing at the bundle launcher)", () => {
     const cg = injectDefaultServers([], { ...base, CODE_INTEL: "codegraph" }, "linux").find((s) => s.name === "codegraph");
-    expect(cg?.command).toBe("/pkg/codegraph");
-    expect(cg?.args).toEqual(["serve", "--mcp"]);
+    expect(cg?.command).toBe("/pkg/codegraph/bin/codegraph");
+    expect(cg?.args).toEqual(["serve", "--mcp", "--path", "${workspaceFolder}"]);
+    expect(cg?.cwd).toBe("/pkg/codegraph");
+  });
+
+  it("sets cwd=bundle + relative entry on win32 (spawn-worker space safety)", () => {
+    const cg = injectDefaultServers([], { ...base, CODE_INTEL: "codegraph" }, "win32").find((s) => s.name === "codegraph");
+    expect(cg?.command).toBe("/pkg/codegraph/node.exe");
+    expect(cg?.args).toEqual([
+      "--liftoff-only",
+      "lib/dist/bin/codegraph.js",
+      "serve",
+      "--mcp",
+      "--path",
+      "${workspaceFolder}",
+    ]);
+    expect(cg?.cwd).toBe("/pkg/codegraph");
   });
 
   it("injects codegraph even when CODE_INTEL is unset (default engine)", () => {

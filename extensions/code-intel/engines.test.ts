@@ -8,19 +8,22 @@ describe("code-intel engines", () => {
     expect(cfg.transport).toBe("stdio");
     expect(cfg.command).toBe("/pkg/codegraph/bin/codegraph");
     expect(cfg.args).toEqual(["serve", "--mcp", "--path", "${workspaceFolder}"]);
+    expect(cfg.cwd).toBe("/pkg/codegraph");
   });
 
-  it("codegraph on win32 runs the bundled node.exe against the app entry (--liftoff-only)", () => {
+  it("codegraph on win32 runs the bundled node.exe against a RELATIVE entry under cwd=bundle", () => {
     const cfg = getEngine("codegraph")!.buildConfig("C:/pkg", "win32");
     expect(cfg.command).toBe("C:/pkg/codegraph/node.exe");
+    // 入口相对、cwd=bundle：规避含空格绝对路径在 piped spawn worker 时被截断。
     expect(cfg.args).toEqual([
       "--liftoff-only",
-      "C:/pkg/codegraph/lib/dist/bin/codegraph.js",
+      "lib/dist/bin/codegraph.js",
       "serve",
       "--mcp",
       "--path",
       "${workspaceFolder}",
     ]);
+    expect(cfg.cwd).toBe("C:/pkg/codegraph");
   });
 
   it("trims trailing slashes from pkgDir", () => {

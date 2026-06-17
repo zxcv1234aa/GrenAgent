@@ -9,6 +9,9 @@ export interface McpServerConfig {
   args?: string[];
   env?: Record<string, string>;
   url?: string;
+  /** stdio server 工作目录（透传给 StdioClientTransport）。内置 codegraph 用它把 cwd
+   *  设到 bundle 目录，使相对入口生效、规避含空格路径在 spawn worker 时被截断。 */
+  cwd?: string;
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -46,7 +49,15 @@ export function parseMcpServers(json: string): McpServerConfig[] {
     if (url) {
       servers.push({ name, transport: "sse", url });
     } else if (command) {
-      servers.push({ name, transport: "stdio", command, args: asStrArray(cfg.args), env: asStrRecord(cfg.env) });
+      const cwd = typeof cfg.cwd === "string" ? cfg.cwd : undefined;
+      servers.push({
+        name,
+        transport: "stdio",
+        command,
+        args: asStrArray(cfg.args),
+        env: asStrRecord(cfg.env),
+        ...(cwd ? { cwd } : {}),
+      });
     }
   }
   return servers;
@@ -117,6 +128,7 @@ export function expandServerVars(servers: McpServerConfig[], cwd: string): McpSe
     command: srv.command ? sub(srv.command) : srv.command,
     args: srv.args ? srv.args.map(sub) : srv.args,
     url: srv.url ? sub(srv.url) : srv.url,
+    cwd: srv.cwd ? sub(srv.cwd) : srv.cwd,
     env: srv.env ? Object.fromEntries(Object.entries(srv.env).map(([k, v]) => [k, sub(v)])) : srv.env,
   }));
 }

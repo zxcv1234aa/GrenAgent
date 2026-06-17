@@ -39,7 +39,12 @@ const ENGINES: Record<string, CodeIntelEngine> = {
           name: "codegraph",
           transport: "stdio",
           command: `${dir}/node.exe`,
-          args: ["--liftoff-only", `${dir}/lib/dist/bin/codegraph.js`, ...serveArgs],
+          // 入口用相对路径（解析自 cwd=dir）。若用绝对含空格路径（如
+          // "D:/OneDrive/Project Files/..."），codegraph 在 MCP 的 piped/无 TTY 下用
+          // child_process 拉起索引 worker 时会在空格处截断入口，报
+          // "Cannot find module '.../Project'" / lstat 盘符。cwd=dir + 相对入口规避。
+          args: ["--liftoff-only", "lib/dist/bin/codegraph.js", ...serveArgs],
+          cwd: dir,
           env: {},
         };
       }
@@ -48,6 +53,7 @@ const ENGINES: Record<string, CodeIntelEngine> = {
         transport: "stdio",
         command: `${dir}/bin/codegraph`,
         args: serveArgs,
+        cwd: dir,
         env: {},
       };
     },
