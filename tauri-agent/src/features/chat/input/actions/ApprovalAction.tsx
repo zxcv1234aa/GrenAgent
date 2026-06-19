@@ -1,6 +1,6 @@
 import { Icon } from '@lobehub/ui';
 import { Select } from '@lobehub/ui/base-ui';
-import { Shield, ShieldAlert, ShieldOff, type LucideIcon } from 'lucide-react';
+import { Hand, Shield, ShieldAlert, type LucideIcon } from 'lucide-react';
 import { pi } from '../../../../lib/pi';
 import {
   APPROVAL_LABELS,
@@ -10,11 +10,11 @@ import {
 } from '../../../../stores/approvalStore';
 import { useAgentStoreContext } from '../../../../stores/AgentStoreContext';
 
-/** 每个审批策略的 lucide 图标（经 @lobehub/ui 的 Icon 渲染，不用 emoji）。 */
+/** 每个审批策略的 lucide 图标（对齐 Codex：请求批准=手/替我审批=盾/完全访问=感叹号盾牌）。 */
 const ICONS: Record<ApprovalPolicy, LucideIcon> = {
-  ask: ShieldAlert,
+  ask: Hand,
   auto: Shield,
-  full: ShieldOff,
+  full: ShieldAlert,
 };
 
 /**
