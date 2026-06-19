@@ -60,8 +60,12 @@ const IM_SYSTEM_PROMPT_RESTRICTED_SANDBOXED =
 
 // Restricted mode tool deny-list (on top of SAFETY_READONLY, which blocks
 // write/edit + mutating bash): all code execution, ast writes, shell, and gh
-// (which can push/mutate). Only the owner (WECHAT_OC_OWNER) gets full capability.
-const RESTRICTED_DENY_TOOLS = "bash,py_run,py_reset,js_run,js_reset,ast_edit,github";
+// (which can push/mutate). sandbox_sh is denied too — this list is used only on
+// the no-owner + sandbox-UNAVAILABLE path (when sandboxed, we set SANDBOX_ENABLE=on
+// instead of this deny-list), where sandbox_sh can't run anyway; denying it makes
+// the restriction explicit rather than relying on its self-guard. Only the owner
+// (WECHAT_OC_OWNER) gets full capability.
+const RESTRICTED_DENY_TOOLS = "bash,sandbox_sh,py_run,py_reset,js_run,js_reset,ast_edit,github";
 
 interface WechatStatus {
   enabled: boolean;
