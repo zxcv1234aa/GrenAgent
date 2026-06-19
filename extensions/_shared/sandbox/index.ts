@@ -12,8 +12,11 @@ export { NoopSandbox } from "./noop.js";
 type ProbeResult = { ok: true; distro: string } | { ok: false; reason: string };
 export type Probe = () => Promise<ProbeResult>;
 
-let cached: SandboxAdapter | undefined;
+// 正缓存（WslSandbox）长期有效；负缓存（NoopSandbox）带 TTL，使「装好依赖后」无需重启
+// sidecar 即可在下次调用时重探到可用——否则首次在装依赖前调用过会把 Noop 永久缓存。
+let cached: { adapter: SandboxAdapter; at: number } | undefined;
 let inflight: Promise<SandboxAdapter> | undefined;
+const NEG_CACHE_TTL_MS = 30_000;
 
 function wslExec(args: string[]): Promise<{ stdout: string; code: number }> {
   return new Promise((resolve) => {
@@ -54,19 +57,26 @@ const defaultProbe: Probe = async () => {
 
 export async function getSandbox(opts: { probe?: Probe } = {}): Promise<SandboxAdapter> {
   if (getConfig("SANDBOX_ENABLE") === "off") return new NoopSandbox();
-  if (cached) return cached;
+  if (cached) {
+    // 正缓存长期有效；负缓存（Noop）超过 TTL 则重探（应对"装好依赖后"自愈）。
+    const stale = cached.adapter instanceof NoopSandbox && Date.now() - cached.at >= NEG_CACHE_TTL_MS;
+    if (!stale) return cached.adapter;
+  }
   if (inflight) return inflight;
   const probe = opts.probe ?? defaultProbe;
   inflight = (async () => {
     const r = await probe();
-    cached = r.ok ? new WslSandbox({ distro: r.distro }) : new NoopSandbox();
+    cached = { adapter: r.ok ? new WslSandbox({ distro: r.distro }) : new NoopSandbox(), at: Date.now() };
     inflight = undefined;
-    return cached;
+    return cached.adapter;
   })();
   return inflight;
 }
 
-export function __resetForTest(): void {
+/** 显式失效探测缓存（如装完依赖后立即生效，而不等 TTL）。 */
+export function resetSandboxCache(): void {
   cached = undefined;
   inflight = undefined;
 }
+
+export const __resetForTest = resetSandboxCache;

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { winToWslPath } from "./paths.js";
@@ -36,28 +36,51 @@ const defaultRun: RunFn = (file, args, timeoutMs) =>
     });
   });
 
-// 默认 writeSettings：把 srt settings 写到宿主 temp，再转成 WSL 路径返回。
-async function defaultWriteSettings(spec: SandboxSpec, wslCwd: string): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "pi-sbx-"));
-  const winPath = join(dir, "srt-settings.json");
-  writeFileSync(winPath, JSON.stringify(buildSrtSettings(spec, wslCwd)), "utf8");
-  return winToWslPath(winPath);
+export interface Prepared {
+  /** WSL 路径：srt settings 文件。 */
+  settings: string;
+  /** WSL 路径：待执行命令脚本文件（bash 读取执行，规避命令行长度上限与转义）。 */
+  cmd: string;
+  /** 清理临时文件（exec 结束后调用）。 */
+  cleanup: () => void;
 }
+export type PrepareFn = (spec: SandboxSpec, wslCwd: string, command: string) => Promise<Prepared>;
+
+// 默认 prepare：把 srt settings 与命令脚本写到宿主 temp，转成 WSL 路径返回，并给出清理函数。
+// 命令落盘（而非内联 argv）：① 规避 Windows 命令行长度上限；② bash 读文件执行，无需转义/base64。
+const defaultPrepare: PrepareFn = async (spec, wslCwd, command) => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-sbx-"));
+  const settingsWin = join(dir, "srt-settings.json");
+  const cmdWin = join(dir, "cmd.sh");
+  writeFileSync(settingsWin, JSON.stringify(buildSrtSettings(spec, wslCwd)), "utf8");
+  writeFileSync(cmdWin, command, "utf8");
+  return {
+    settings: winToWslPath(settingsWin),
+    cmd: winToWslPath(cmdWin),
+    cleanup: () => {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        /* best-effort */
+      }
+    },
+  };
+};
 
 export interface WslSandboxOpts {
   distro: string;
   run?: RunFn;
-  writeSettings?: (spec: SandboxSpec, wslCwd: string) => Promise<string>;
+  prepare?: PrepareFn;
 }
 
 export class WslSandbox implements SandboxAdapter {
   private distro: string;
   private run: RunFn;
-  private writeSettings: (spec: SandboxSpec, wslCwd: string) => Promise<string>;
+  private prepare: PrepareFn;
   constructor(opts: WslSandboxOpts) {
     this.distro = opts.distro;
     this.run = opts.run ?? defaultRun;
-    this.writeSettings = opts.writeSettings ?? defaultWriteSettings;
+    this.prepare = opts.prepare ?? defaultPrepare;
   }
   async isAvailable(): Promise<boolean> {
     // 由 getSandbox() 的探测决定是否构造本类；构造出来即视为可用。
@@ -65,14 +88,16 @@ export class WslSandbox implements SandboxAdapter {
   }
   async exec(command: string, spec: SandboxSpec): Promise<SandboxResult> {
     const wslCwd = winToWslPath(spec.cwd);
-    const settings = await this.writeSettings(spec, wslCwd);
+    const { settings, cmd, cleanup } = await this.prepare(spec, wslCwd, command);
     // 经登录 shell（bash -lc）执行：srt/node 常在登录 PATH 才有的目录（如自定义 node 安装），
-    // 非登录 `wsl -- srt` 会 command not found。命令 base64 后用管道喂进沙箱内的 bash：
-    // ① wsl 不会把 `bash -lc <script> a b c` 的 a/b/c 作为位置参数传入（实测 $1/$2 为空）；
-    // ② base64 规避任意命令的引号/转义/注入。settings 路径在 tmp（无空格），单引号兜底。
-    const b64 = Buffer.from(command, "utf8").toString("base64");
-    const script = `echo ${b64} | base64 -d | srt --settings '${settings}' bash`;
-    const args = ["-d", this.distro, "--cd", wslCwd, "--", "bash", "-lc", script];
-    return this.run("wsl.exe", args, spec.timeoutMs);
+    // 非登录 `wsl -- srt` 会 command not found。命令与 settings 均落盘，argv 只含 tmp 路径
+    // （无空格，单引号兜底），既不超命令行长度，也无需对任意命令做转义。
+    try {
+      const script = `srt --settings '${settings}' bash '${cmd}'`;
+      const args = ["-d", this.distro, "--cd", wslCwd, "--", "bash", "-lc", script];
+      return await this.run("wsl.exe", args, spec.timeoutMs);
+    } finally {
+      cleanup();
+    }
   }
 }

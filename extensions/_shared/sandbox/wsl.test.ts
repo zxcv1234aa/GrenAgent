@@ -10,10 +10,13 @@ function fakeRun() {
   return { run, calls };
 }
 
+const prepareFixed = (cleanup: () => void = () => {}) =>
+  async () => ({ settings: "/tmp/s.json", cmd: "/tmp/cmd.sh", cleanup });
+
 describe("WslSandbox.exec", () => {
-  it("builds wsl + srt argv with cwd mapped and a settings file", async () => {
+  it("builds wsl + srt argv with cwd mapped and on-disk settings/cmd files", async () => {
     const { run, calls } = fakeRun();
-    const sbx = new WslSandbox({ distro: "Ubuntu", run, writeSettings: async () => "/tmp/s.json" });
+    const sbx = new WslSandbox({ distro: "Ubuntu", run, prepare: prepareFixed() });
     const r = await sbx.exec("echo hi", { cwd: "D:\\proj" });
     expect(r).toEqual({ stdout: "ok", stderr: "", code: 0 });
     expect(calls[0].file).toBe("wsl.exe");
@@ -25,16 +28,22 @@ describe("WslSandbox.exec", () => {
       "--",
       "bash",
       "-lc",
-      // "echo hi" base64 = ZWNobyBoaQ==
-      "echo ZWNobyBoaQ== | base64 -d | srt --settings '/tmp/s.json' bash",
+      "srt --settings '/tmp/s.json' bash '/tmp/cmd.sh'",
     ]);
   });
 
   it("passes the timeout through to run", async () => {
-    const { run, calls } = fakeRun();
-    void calls;
-    const sbx = new WslSandbox({ distro: "Ubuntu", run, writeSettings: async () => "/tmp/s.json" });
+    const { run } = fakeRun();
+    const sbx = new WslSandbox({ distro: "Ubuntu", run, prepare: prepareFixed() });
     await sbx.exec("sleep 1", { cwd: "D:\\proj", timeoutMs: 5000 });
     expect(run).toHaveBeenCalledWith("wsl.exe", expect.any(Array), 5000);
+  });
+
+  it("cleans up temp files after exec", async () => {
+    const { run } = fakeRun();
+    const cleanup = vi.fn();
+    const sbx = new WslSandbox({ distro: "Ubuntu", run, prepare: prepareFixed(cleanup) });
+    await sbx.exec("echo hi", { cwd: "D:\\proj" });
+    expect(cleanup).toHaveBeenCalledTimes(1);
   });
 });

@@ -118,13 +118,14 @@ pub async fn sandbox_install(step: String) -> Result<String, String> {
             let distro =
                 pick_distro(&list).ok_or_else(|| "无可用的 WSL2 发行版（请先安装 WSL）".to_string())?;
             // 以 root 运行（wsl -u root）→ 无需 sudo 密码，全自动一键。装 apt 依赖
-            // （bubblewrap/socat/ripgrep）；缺 npm 则一并装 nodejs/npm；再全局装 srt。
+            // （bubblewrap/socat/ripgrep）；缺 npm 则一并装 nodejs/npm；srt 全局装到共享前缀
+            // /usr/local（其 bin 在默认用户 PATH 上——执行/探测都用默认用户登录 shell）。
             // 幂等：已装的 apt 包跳过，npm i -g 重装无害。stdin=null 防任何意外交互挂起。
             let script = "set -e; export DEBIAN_FRONTEND=noninteractive; \
                  apt-get update; \
                  apt-get install -y bubblewrap socat ripgrep; \
                  command -v npm >/dev/null 2>&1 || apt-get install -y nodejs npm; \
-                 npm i -g @anthropic-ai/sandbox-runtime; \
+                 npm i -g --prefix /usr/local @anthropic-ai/sandbox-runtime; \
                  echo SANDBOX_DEPS_DONE";
             let out = Command::new("wsl.exe")
                 .args(["-d", &distro, "-u", "root", "--", "bash", "-lc", script])
@@ -137,6 +138,26 @@ pub async fn sandbox_install(step: String) -> Result<String, String> {
                 return Err(format!(
                     "依赖安装失败（{distro}）：{}",
                     decode_wsl(&out.stderr).trim()
+                ));
+            }
+            // 关键：以「默认用户」校验可见性（sidecar 执行/探测都走默认用户登录 shell；
+            // root 装的若不在其 PATH，这里就能在装阶段抓到，而不是事后静默不生效）。
+            let verify = Command::new("wsl.exe")
+                .args([
+                    "-d",
+                    &distro,
+                    "--",
+                    "bash",
+                    "-lc",
+                    "command -v srt bwrap socat rg >/dev/null && echo VERIFY_OK",
+                ])
+                .stdin(Stdio::null())
+                .output()
+                .await
+                .map_err(|e| format!("安装后校验失败: {e}"))?;
+            if !decode_wsl(&verify.stdout).contains("VERIFY_OK") {
+                return Err(format!(
+                    "依赖已装但默认用户 PATH 未找到 srt/依赖（{distro}）：请确认 /usr/local/bin 在 PATH，或手动执行 npm i -g --prefix /usr/local @anthropic-ai/sandbox-runtime"
                 ));
             }
             Ok(format!("依赖安装完成（{distro}）"))
