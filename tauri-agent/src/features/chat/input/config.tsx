@@ -84,10 +84,10 @@ export const COLLAPSE_PRIORITY: ActionKey[] = [
  * model 取限宽后的上限（见 ModelAction 的 maxWidth），按最坏情况预留以避免溢出。
  */
 export const ACTION_WIDTH = {
-  mode: 96,
-  approval: 96,
+  mode: 44,
+  approval: 44,
   model: 180,
-  thinking: 84,
+  thinking: 44,
   fileUpload: 28,
   kbAdd: 28,
   webSearch: 28,
