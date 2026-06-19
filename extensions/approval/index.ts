@@ -9,6 +9,7 @@ import {
   parseApproval,
   setApprovalPolicy,
 } from "../_shared/approval.js";
+import { getConfig } from "../_shared/runtime-config.js";
 
 interface PersistedState {
   policy?: ApprovalPolicy;
@@ -42,7 +43,8 @@ export default function (pi: ExtensionAPI) {
     }>;
     const entry = entries.filter((e) => e.type === "custom" && e.customType === "approval").pop();
     const data = entry?.data as PersistedState | undefined;
-    setApprovalPolicy(parseApproval(data?.policy) ?? "auto");
+    // 优先 session entry；否则 APPROVAL_POLICY（子代理由父进程注入，实现策略继承）；再否则 auto。
+    setApprovalPolicy(parseApproval(data?.policy) ?? parseApproval(getConfig("APPROVAL_POLICY")) ?? "auto");
     push(ctx);
   });
 }

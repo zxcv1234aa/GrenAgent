@@ -5,6 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { spawnPiAgent } from "./runner.js";
 import { normalizeTasks, spawnHasWork } from "./tasks.js";
+import { getApprovalPolicy } from "../_shared/approval.js";
 import { sandboxAvailable } from "../_shared/sandbox-gate.js";
 import { resolveProfile, profileToModel, profileToEnv, profileLimits, type ProfileInput } from "./capability.js";
 import { discoverAgents, type AgentScope } from "./agents.js";
@@ -236,6 +237,8 @@ export default function (pi: ExtensionAPI) {
       }
       const profileModel = profileToModel(profile, getConfig);
       const profileEnv: Record<string, string> = params.profile ? profileToEnv(profile) : {};
+      // 子代理继承 owner 当前审批策略（headless 下 ask 在 safety 内降级为 auto，不会全拦）。
+      profileEnv.APPROVAL_POLICY = getApprovalPolicy();
       const limits = profileLimits(profile);
       // sandbox 档：可用则让子代理 code-exec/sandbox_sh 走 WSL2 沙箱（safety 禁内置 bash）；
       // 不可用则静默回退 process 隔离（profileEnv 的 deny/readonly 仍生效）。

@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../_shared/approval.js", () => ({ getApprovalPolicy: vi.fn() }));
-vi.mock("../_shared/sandbox-gate.js", () => ({ sandboxOn: vi.fn() }));
+vi.mock("../_shared/sandbox-gate.js", () => ({ sandboxOn: vi.fn(), sandboxAvailable: vi.fn() }));
 vi.mock("../_shared/runtime-config.js", () => ({ getConfig: vi.fn() }));
 
 import { getApprovalPolicy } from "../_shared/approval.js";
 import { getConfig } from "../_shared/runtime-config.js";
-import { sandboxOn } from "../_shared/sandbox-gate.js";
+import { sandboxAvailable, sandboxOn } from "../_shared/sandbox-gate.js";
 import safety from "./index.js";
 
 type ToolCall = (event: unknown, ctx: unknown) => Promise<{ block?: boolean; reason?: string } | undefined>;
@@ -23,15 +23,22 @@ const cwd = process.platform === "win32" ? "D:\\proj" : "/proj";
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(sandboxOn).mockResolvedValue(false);
+  vi.mocked(sandboxAvailable).mockResolvedValue(false);
   vi.mocked(getConfig).mockReturnValue(undefined);
 });
 
 describe("safety approval gating", () => {
-  it("full policy bypasses everything (even dangerous bash)", async () => {
+  it("full skips user-facing confirms (dangerous bash allowed)", async () => {
     vi.mocked(getApprovalPolicy).mockReturnValue("full");
-    const run = setup();
-    const r = await run({ toolName: "bash", input: { command: "rm -rf /tmp/x" } }, { hasUI: true, cwd, ui: {} });
+    const r = await setup()({ toolName: "bash", input: { command: "rm -rf /tmp/x" } }, { hasUI: true, cwd, ui: {} });
     expect(r).toBeUndefined();
+  });
+
+  it("full does NOT bypass capability denyTools (sub-agent hard limit)", async () => {
+    vi.mocked(getApprovalPolicy).mockReturnValue("full");
+    vi.mocked(getConfig).mockImplementation((k: string) => (k === "SAFETY_DENY_TOOLS" ? "spawn_agent" : undefined));
+    const r = await setup()({ toolName: "spawn_agent", input: {} }, { hasUI: true, cwd, ui: {} });
+    expect(r?.block).toBe(true);
   });
 
   it("ask: blocks out-of-cwd write when user declines", async () => {
@@ -55,6 +62,23 @@ describe("safety approval gating", () => {
     const ui = { select: vi.fn().mockResolvedValue("拒绝") };
     const r = await setup()({ toolName: "web_fetch", input: { url: "http://x" } }, { hasUI: true, cwd, ui });
     expect(r?.block).toBe(true);
+  });
+
+  it("ask: confirms mutating bash when sandbox unavailable", async () => {
+    vi.mocked(getApprovalPolicy).mockReturnValue("ask");
+    vi.mocked(sandboxAvailable).mockResolvedValue(false);
+    const ui = { select: vi.fn().mockResolvedValue("拒绝") };
+    const r = await setup()({ toolName: "bash", input: { command: "rm foo" } }, { hasUI: true, cwd, ui });
+    expect(ui.select).toHaveBeenCalled();
+    expect(r?.block).toBe(true);
+  });
+
+  it("ask headless (no UI) degrades to auto (no block on out-of-cwd write)", async () => {
+    vi.mocked(getApprovalPolicy).mockReturnValue("ask");
+    const ui = { select: vi.fn() };
+    const r = await setup()({ toolName: "write", input: { path: "../escape.txt" } }, { hasUI: false, cwd, ui });
+    expect(ui.select).not.toHaveBeenCalled();
+    expect(r).toBeUndefined();
   });
 
   it("auto: no extra confirm for out-of-cwd write", async () => {
