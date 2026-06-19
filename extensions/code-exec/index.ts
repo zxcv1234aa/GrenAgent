@@ -12,6 +12,7 @@ import { getConfig } from "../_shared/runtime-config.js";
 import { JsKernel } from "./js-kernel.js";
 import { type PythonInfo, PythonKernel, detectPython } from "./kernel.js";
 import { formatResult } from "./protocol.js";
+import { runCodeInSandbox, sandboxRoutingOn } from "./sandbox-exec.js";
 
 const RUNNER_PATH = join(dirname(fileURLToPath(import.meta.url)), "runner.py");
 const JS_RUNNER_PATH = join(dirname(fileURLToPath(import.meta.url)), "runner.mjs");
@@ -49,6 +50,10 @@ export default function (pi: ExtensionAPI) {
       timeout_ms: Type.Optional(Type.Number({ description: "执行超时（毫秒），默认 30000" })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      if (sandboxRoutingOn()) {
+        const sb = await runCodeInSandbox("py", params.code ?? "", ctx.cwd, params.timeout_ms);
+        if (sb) return { content: [{ type: "text", text: sb.text }], details: { ok: sb.ok, sandbox: true } };
+      }
       const info = resolvePython();
       if (!info) {
         return {
@@ -112,6 +117,10 @@ export default function (pi: ExtensionAPI) {
       timeout_ms: Type.Optional(Type.Number({ description: "执行超时（毫秒），默认 30000" })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      if (sandboxRoutingOn()) {
+        const sb = await runCodeInSandbox("js", params.code ?? "", ctx.cwd, params.timeout_ms);
+        if (sb) return { content: [{ type: "text", text: sb.text }], details: { ok: sb.ok, sandbox: true } };
+      }
       const kernel = jsKernelFor(ctx.cwd);
       try {
         const result = await kernel.exec(params.code ?? "", {
