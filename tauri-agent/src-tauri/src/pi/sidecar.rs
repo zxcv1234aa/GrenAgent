@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -81,6 +82,22 @@ pub fn spawn_pi_client(
     });
     let client = Arc::new(PiClient::new(workspace, transport, sink));
 
+    // 守卫探针：定制 sidecar 启动会在 stderr 打 `[grenagent-sidecar] ready ... safety=on`。
+    // 若 spawn 到的是上游原版 pi（未编译进 safety/permission/sandbox 护栏），这条 marker 不会出现 →
+    // 超时后大声告警，避免护栏静默失效却无人察觉（例如忘了跑 `npm run build:sidecar`）。
+    let banner_seen = Arc::new(AtomicBool::new(false));
+    {
+        let banner_for_timer = banner_seen.clone();
+        async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            if !banner_for_timer.load(Ordering::Relaxed) {
+                eprintln!(
+                    "[pi] WARNING: GrenAgent sidecar startup marker not seen within 10s. The spawned `pi` may be a plain upstream binary WITHOUT GrenAgent guardrails (safety/permission/sandbox). Rebuild the sidecar via `npm run build:sidecar`."
+                );
+            }
+        });
+    }
+
     let client_for_loop = client.clone();
     async_runtime::spawn(async move {
         let mut buf = JsonlBuffer::new();
@@ -97,7 +114,17 @@ pub fn spawn_pi_client(
                     }
                 }
                 CommandEvent::Stderr(bytes) => {
-                    eprintln!("[pi stderr] {}", String::from_utf8_lossy(&bytes));
+                    let s = String::from_utf8_lossy(&bytes);
+                    if s.contains("[grenagent-sidecar] ready") {
+                        banner_seen.store(true, Ordering::Relaxed);
+                        if !s.contains("safety=on") {
+                            eprintln!(
+                                "[pi] WARNING: sidecar reports guardrails are NOT active (safety off): {}",
+                                s.trim()
+                            );
+                        }
+                    }
+                    eprintln!("[pi stderr] {s}");
                 }
                 CommandEvent::Terminated(payload) => {
                     exit_code = payload.code;
