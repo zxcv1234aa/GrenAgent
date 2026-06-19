@@ -23,12 +23,10 @@ describe("WslSandbox.exec", () => {
       "--cd",
       "/mnt/d/proj",
       "--",
-      "srt",
-      "--settings",
-      "/tmp/s.json",
       "bash",
       "-lc",
-      "echo hi",
+      // "echo hi" base64 = ZWNobyBoaQ==
+      "echo ZWNobyBoaQ== | base64 -d | srt --settings '/tmp/s.json' bash",
     ]);
   });
 

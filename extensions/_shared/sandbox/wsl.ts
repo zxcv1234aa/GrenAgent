@@ -66,19 +66,13 @@ export class WslSandbox implements SandboxAdapter {
   async exec(command: string, spec: SandboxSpec): Promise<SandboxResult> {
     const wslCwd = winToWslPath(spec.cwd);
     const settings = await this.writeSettings(spec, wslCwd);
-    const args = [
-      "-d",
-      this.distro,
-      "--cd",
-      wslCwd,
-      "--",
-      "srt",
-      "--settings",
-      settings,
-      "bash",
-      "-lc",
-      command,
-    ];
+    // 经登录 shell（bash -lc）执行：srt/node 常在登录 PATH 才有的目录（如自定义 node 安装），
+    // 非登录 `wsl -- srt` 会 command not found。命令 base64 后用管道喂进沙箱内的 bash：
+    // ① wsl 不会把 `bash -lc <script> a b c` 的 a/b/c 作为位置参数传入（实测 $1/$2 为空）；
+    // ② base64 规避任意命令的引号/转义/注入。settings 路径在 tmp（无空格），单引号兜底。
+    const b64 = Buffer.from(command, "utf8").toString("base64");
+    const script = `echo ${b64} | base64 -d | srt --settings '${settings}' bash`;
+    const args = ["-d", this.distro, "--cd", wslCwd, "--", "bash", "-lc", script];
     return this.run("wsl.exe", args, spec.timeoutMs);
   }
 }

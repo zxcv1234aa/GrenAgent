@@ -81,7 +81,7 @@ pub async fn sandbox_status() -> Result<SandboxStatus, String> {
             "--",
             "bash",
             "-lc",
-            "command -v srt bwrap socat >/dev/null && echo OK",
+            "command -v srt bwrap socat rg >/dev/null && echo OK",
         ])
         .stdin(Stdio::null())
         .output()
@@ -118,7 +118,7 @@ pub async fn sandbox_install(step: String) -> Result<String, String> {
             let distro =
                 pick_distro(&list).ok_or_else(|| "无可用的 WSL2 发行版（请先安装 WSL）".to_string())?;
             // stdin=null：若 sudo 需要密码则快速失败并把提示回报，而不是挂起。
-            let script = "sudo -n apt-get update && sudo -n apt-get install -y bubblewrap socat && sudo -n npm i -g @anthropic-ai/sandbox-runtime";
+            let script = "sudo -n apt-get update && sudo -n apt-get install -y bubblewrap socat ripgrep && sudo -n npm i -g @anthropic-ai/sandbox-runtime";
             let out = Command::new("wsl.exe")
                 .args(["-d", &distro, "--", "bash", "-lc", script])
                 .stdin(Stdio::null())
