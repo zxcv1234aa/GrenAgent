@@ -32,7 +32,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getConfig, watchConfig } from "../_shared/runtime-config.js";
-import { getSandbox } from "../_shared/sandbox/index.js";
+import { sandboxAvailable } from "../_shared/sandbox-gate.js";
 import { spawnPiAgent } from "../multi-agent/runner.js";
 import { createImContextStore, type ImContextStore, renderPrompt } from "./context.js";
 import { startWeixinOc, type WeixinOcHandle } from "./wechat.js";
@@ -187,7 +187,8 @@ async function runImTurn(fromUser: string, text: string): Promise<void> {
   // authorized. Either way auto drivers stay OFF so the agent can't self-spam.
   const restricted = !wechatConfig().owner;
   // 无主人 + 沙箱可用 → 升级为"沙箱内可执行"；不可用 → 维持纯 deny 兜底。
-  const sandboxed = restricted && (await getSandbox().isAvailable());
+  // 用 sandboxAvailable（不看 owner 审批策略）：不可信会话的隔离不应被 owner 的「完全访问」关掉。
+  const sandboxed = restricted && (await sandboxAvailable());
   const env: Record<string, string> = { GOAL_ENABLED: "0", LOOP_GUARD: "1" };
   if (restricted) {
     env.SAFETY_READONLY = "1"; // 宿主 write/edit 锁；写只能经 sandbox_sh（沙箱内、限 workspace）

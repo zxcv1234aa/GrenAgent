@@ -5,28 +5,23 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { getConfig } from "../_shared/runtime-config.js";
+import { sandboxOn } from "../_shared/sandbox-gate.js";
 import { getSandbox } from "../_shared/sandbox/index.js";
-
-/** 仅显式 on 才路由（避免静默改变 owner 内核行为 + 探测冷启动延迟）。 */
-export function sandboxRoutingOn(): boolean {
-  return getConfig("SANDBOX_ENABLE") === "on";
-}
 
 export interface SandboxRunOutcome {
   ok: boolean;
   text: string;
 }
 
-// 返回 null = 沙箱不可用，调用方应回退到本地内核。
+// 返回 null = 不走沙箱（策略 full / SANDBOX_ENABLE=off / 沙箱不可用），调用方回退本地内核。
 export async function runCodeInSandbox(
   lang: "py" | "js",
   code: string,
   cwd: string,
   timeoutMs?: number,
 ): Promise<SandboxRunOutcome | null> {
+  if (!(await sandboxOn())) return null;
   const sbx = await getSandbox();
-  if (!(await sbx.isAvailable())) return null;
   const dir = join(cwd, ".pi");
   mkdirSync(dir, { recursive: true });
   const name = `sbx-${randomBytes(4).toString("hex")}.${lang === "py" ? "py" : "mjs"}`;

@@ -5,7 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { spawnPiAgent } from "./runner.js";
 import { normalizeTasks, spawnHasWork } from "./tasks.js";
-import { getSandbox } from "../_shared/sandbox/index.js";
+import { sandboxAvailable } from "../_shared/sandbox-gate.js";
 import { resolveProfile, profileToModel, profileToEnv, profileLimits, type ProfileInput } from "./capability.js";
 import { discoverAgents, type AgentScope } from "./agents.js";
 import { createWorktree, worktreeDiff } from "./worktree.js";
@@ -239,7 +239,7 @@ export default function (pi: ExtensionAPI) {
       const limits = profileLimits(profile);
       // sandbox 档：可用则让子代理 code-exec/sandbox_sh 走 WSL2 沙箱（safety 禁内置 bash）；
       // 不可用则静默回退 process 隔离（profileEnv 的 deny/readonly 仍生效）。
-      if (wantSandbox && (await getSandbox().isAvailable())) {
+      if (wantSandbox && (await sandboxAvailable())) {
         profileEnv.SANDBOX_ENABLE = "on";
       }
 
