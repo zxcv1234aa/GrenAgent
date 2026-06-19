@@ -82,6 +82,7 @@ pub fn run() {
             commands::delete_pi_session,
             commands::workspaces::create_conversation,
             commands::workspaces::get_works_dir,
+            commands::workspaces::prune_orphan_conversations,
             commands::workspaces::delete_conversation,
             commands::workspaces::remove_project,
             commands::extension_ui_respond,
@@ -143,6 +144,9 @@ pub fn run() {
             commands::code_intel::code_intel_sync,
             commands::code_intel::code_intel_reindex,
             commands::code_intel::code_intel_is_initialized,
+            commands::code_intel::code_intel_file_graph,
+            commands::sandbox::sandbox_status,
+            commands::sandbox::sandbox_install,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

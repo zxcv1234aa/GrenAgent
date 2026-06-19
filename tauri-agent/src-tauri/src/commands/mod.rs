@@ -9,6 +9,7 @@ pub mod mcp_policy;
 pub mod memory;
 pub mod providers;
 pub mod review;
+pub mod sandbox;
 pub mod sessions;
 pub mod shell;
 pub mod skills;
