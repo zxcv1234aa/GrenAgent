@@ -1,11 +1,3 @@
-export interface SandboxAdapter {
-  isEnabled(): boolean;
-  // 预留：future 接 @anthropic-ai/sandbox-runtime / gondolin
-  exec?(command: string): Promise<{ stdout: string; stderr: string; code: number }>;
-}
-
-export class NoopSandbox implements SandboxAdapter {
-  isEnabled() {
-    return false;
-  }
-}
+// 历史桩迁移到 _shared/sandbox。此文件仅 re-export 以不破坏旧导入路径。
+export type { SandboxAdapter, SandboxResult, SandboxSpec } from "../_shared/sandbox/index.js";
+export { NoopSandbox, getSandbox } from "../_shared/sandbox/index.js";
